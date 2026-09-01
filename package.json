@@ -1,0 +1,14 @@
+{
+  "name": "zero-stars",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Zero Stars — complaints-only public register (full-stack prototype)",
+  "scripts": {
+    "start": "node --no-warnings server.js",
+    "seed": "node --no-warnings db.js --reseed"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}

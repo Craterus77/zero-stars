@@ -1,0 +1,51 @@
+# Zero Stars — full-stack prototype
+
+A complaints-only public register. Node + Express API, built-in `node:sqlite` database,
+real password-hashed accounts and session cookies, and the same front-end design as the
+static prototype (now fetching from the API).
+
+## Run it
+
+```bash
+npm install      # once
+npm start        # serves http://localhost:4317
+```
+
+The database (`zerostars.db`) and seed data are created automatically on first start.
+
+- `npm run seed` re-seeds with `--reseed` (wipes complaints/businesses, re-inserts the samples).
+- Delete `zerostars.db*` for a completely fresh start (also clears accounts).
+
+## What's real here (vs the static prototype)
+
+| Concern        | Implementation                                                        |
+|----------------|-----------------------------------------------------------------------|
+| Database       | SQLite via `node:sqlite` — `users`, `sessions`, `businesses`, `complaints`, `replies` |
+| Auth           | Register / login with email + password; scrypt-hashed, `timingSafeEqual` check |
+| Sessions       | Random token in an `HttpOnly; SameSite=Lax` cookie                     |
+| Persistence    | Filed complaints and business replies are written to the DB and survive restarts |
+| Authorization  | Filing a complaint / posting a reply requires a valid session (401 otherwise) |
+| Right of reply | `POST /api/complaints/:id/reply` adds a response and flips the case to `responded` |
+
+## API
+
+| Method | Path                              | Auth | Purpose                          |
+|--------|-----------------------------------|------|----------------------------------|
+| GET    | `/api/meta`                       | —    | Categories + register-wide stats |
+| POST   | `/api/auth/register`              | —    | Create account, start session    |
+| POST   | `/api/auth/login`                 | —    | Sign in                          |
+| POST   | `/api/auth/logout`                | ✓    | End session                      |
+| GET    | `/api/auth/me`                    | —    | Current user (or null)           |
+| GET    | `/api/complaints?q=&cat=&status=&sort=` | — | Search / filter / sort the feed |
+| POST   | `/api/complaints`                 | ✓    | File a complaint                 |
+| POST   | `/api/complaints/:publicId/reply` | ✓    | Business right of reply          |
+| GET    | `/api/businesses/:slug`           | —    | Dossier: business + complaints + stats |
+
+## Notes / next steps
+
+- All seeded businesses, complaints and responses are **fictional**, for demonstration only.
+- Prototype scope: "respond as the business" is open to any signed-in user. Production would
+  verify ownership of a listing before allowing a reply, and add a moderation/dispute workflow.
+- No email is actually sent; there is no password reset flow yet.
+- To make it shareable/deployable, swap `node:sqlite` for hosted Postgres (e.g. Supabase) and
+  put it behind HTTPS; the API surface stays the same.

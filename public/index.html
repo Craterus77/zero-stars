@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zero Stars</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<header class="mast">
+  <div class="wrap mast-row">
+    <button class="wordmark" onclick="go('home')" aria-label="Zero Stars home">
+      <span class="zs-stars" id="markStars"></span>
+      <span style="display:flex;flex-direction:column;align-items:flex-start;line-height:1">
+        <b>ZERO&nbsp;STARS</b>
+        <span class="sub">The unresolved-complaints register</span>
+      </span>
+    </button>
+    <div class="mast-spacer"></div>
+    <div class="mast-actions">
+      <span class="db-badge" title="Backed by a real SQLite database + API">● live db</span>
+      <div id="acctSlot"></div>
+      <button class="icon-btn" id="themeBtn" title="Toggle theme" aria-label="Toggle light or dark theme"></button>
+      <button class="btn accent" onclick="startComplaint()">Make yourself heard</button>
+    </div>
+  </div>
+</header>
+
+<div id="app"><div class="loading">Loading the register…</div></div>
+
+<footer>
+  <div class="wrap foot-grid">
+    <div>
+      <h4>Zero Stars</h4>
+      <p>A complaints-only public register for people who were not heard. No five-star side, no glowing reviews — a documented record of where a company, tradesperson, or service provider let someone down, from a faulty kettle to a house build gone wrong.</p>
+    </div>
+    <div>
+      <h4>How it works</h4>
+      <ul>
+        <li>Anyone can read and search — free, no account.</li>
+        <li>Filing a complaint needs a free account, so you can track responses.</li>
+        <li>Every business gets a public right of reply.</li>
+        <li>Ratings run <strong>zero to &minus;5</strong> — never positive.</li>
+      </ul>
+    </div>
+    <div>
+      <h4>Fair use</h4>
+      <ul>
+        <li>Complaints must be truthful and first-hand.</li>
+        <li>Businesses may respond or flag a case as resolved.</li>
+        <li>Disputed entries go to moderation review.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="wrap"><p class="disc">Full-stack prototype. Data persists in a local SQLite database via a Node/Express API. All seeded businesses, complaints and responses are fictional and for demonstration only — any resemblance to a real company is coincidental.</p></div>
+</footer>
+
+<div class="overlay" id="overlay"><div id="modalMount"></div></div>
+<div class="toast" id="toast"></div>
+
+<script src="/app.js"></script>
+</body>
+</html>

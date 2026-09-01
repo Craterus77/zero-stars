@@ -1,0 +1,425 @@
+/* Zero Stars — front end (talks to the Express + SQLite API) */
+
+const CATEGORIES = ["Trades & Construction","Retail","Warranty & Insurance","Customer Service","Professional Services","Other"];
+let account = null;
+const filters = { q:"", cat:"all", status:"all", sort:"recent" };
+let currentView = { name:"home" };
+
+/* ---------- API helper ---------- */
+async function api(path, opts={}) {
+  const res = await fetch(path, {
+    headers: { "Content-Type":"application/json" },
+    credentials: "same-origin",
+    ...opts,
+    body: opts.body ? JSON.stringify(opts.body) : undefined
+  });
+  let data = null;
+  try { data = await res.json(); } catch(e){}
+  if (!res.ok) throw new Error((data && data.error) || "Something went wrong.");
+  return data;
+}
+
+/* ---------- stars / severity ---------- */
+function starSVG(filled,size){
+  const s=size||14, col=filled?"var(--accent)":"none", stroke=filled?"var(--accent)":"var(--line-strong)";
+  return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="${col}" stroke="${stroke}" stroke-width="1.6" stroke-linejoin="round" style="transform:rotate(180deg)"><path d="M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17.8 5.9 21.4l1.4-6.8-5.1-4.7 6.9-.8z"/></svg>`;
+}
+function starRow(sev,size){ let h=""; for(let i=1;i<=5;i++) h+=starSVG(i<=sev,size); return h; }
+
+/* ---------- helpers ---------- */
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
+function escAttr(s){ return esc(s); }
+function fmtDate(iso){ try{const d=new Date(iso+"T00:00:00"); return d.toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"});}catch(e){return iso;} }
+function statusLabel(s){ return s==="responded"?"Business responded":s==="ignored"?"Ignored / stonewalled":"Unresolved"; }
+
+/* ---------- router ---------- */
+function go(name,arg){ currentView={name,arg}; window.scrollTo({top:0}); render(); }
+
+async function render(){
+  renderChrome();
+  const app=document.getElementById("app");
+  if(currentView.name==="business"){
+    app.innerHTML=`<div class="loading">Opening the dossier…</div>`;
+    try{
+      const data=await api("/api/businesses/"+encodeURIComponent(currentView.arg));
+      app.innerHTML=viewBusiness(data);
+    }catch(e){
+      app.innerHTML=`<main><div class="wrap"><div class="empty"><div class="big">Can't find that one — lucky them.</div><div>${esc(e.message)}</div><button class="btn ghost sm" style="margin-top:16px" onclick="go('home')">← Back to the register</button></div></div></main>`;
+    }
+  } else {
+    app.innerHTML=await viewHome();
+    wireHome();
+  }
+}
+
+/* ---------- home ---------- */
+async function viewHome(){
+  let meta={total:0,unresolved:0,avgSeverity:0,businesses:0};
+  try{ meta=await api("/api/meta"); }catch(e){}
+  return `
+  <section class="hero">
+    <div class="wrap hero-grid">
+      <div>
+        <p class="eyebrow">For the unheard, the unheeded and the unbelievably pissed off</p>
+        <h1 class="title">When one star is <em>one too many.</em></h1>
+        <p class="lede">A free, public register for people who weren't heard. Search what a business is accused of before you hand over a deposit — and put your own unresolved complaint on the record.</p>
+      </div>
+      <div class="hero-stats">
+        <div class="hstat"><span class="n neg mono">&minus;${(meta.avgSeverity||0).toFixed(1)}</span><span class="l">Register-wide average</span></div>
+        <div class="hstat"><span class="n">${meta.total}</span><span class="l">Logged complaints</span></div>
+        <div class="hstat"><span class="n" style="color:var(--amber)">${meta.unresolved}</span><span class="l">Still unresolved</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="register">
+    <div class="wrap reg-inner">
+      <div class="searchbox">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        <input id="q" type="search" placeholder="Search a business, trade, or town…" value="${escAttr(filters.q)}" autocomplete="off">
+      </div>
+      <select class="filter" id="cat">
+        <option value="all">All categories</option>
+        ${CATEGORIES.map(c=>`<option value="${c}" ${filters.cat===c?"selected":""}>${c}</option>`).join("")}
+      </select>
+      <select class="filter" id="status">
+        <option value="all">Any status</option>
+        <option value="unresolved" ${filters.status==="unresolved"?"selected":""}>Unresolved</option>
+        <option value="ignored" ${filters.status==="ignored"?"selected":""}>Ignored / stonewalled</option>
+        <option value="responded" ${filters.status==="responded"?"selected":""}>Business responded</option>
+      </select>
+      <select class="filter" id="sort">
+        <option value="recent" ${filters.sort==="recent"?"selected":""}>Most recent</option>
+        <option value="severe" ${filters.sort==="severe"?"selected":""}>Most severe</option>
+        <option value="business" ${filters.sort==="business"?"selected":""}>By business</option>
+      </select>
+      <span class="result-count" id="rcount"></span>
+    </div>
+  </section>
+
+  <main><div class="wrap"><div class="feed" id="feed"><div class="loading">Loading complaints…</div></div></div></main>`;
+}
+
+function caseCard(c,opts={}){
+  const unheard = c.status!=="responded";
+  return `
+  <article class="case">
+    <div class="case-top">
+      <div class="case-main">
+        <div class="case-meta">
+          <span class="caseid">${c.id}</span>
+          <button class="biz-link" onclick="go('business','${c.biz}')">${esc(c.bizName)}</button>
+        </div>
+        <div class="biz-sub">${esc(c.cat)} · ${esc(c.loc)}</div>
+        <h3 class="headline">${esc(c.title)}</h3>
+        <p class="body-excerpt">${esc(c.body)}</p>
+      </div>
+      <div class="case-side">
+        <div class="sev">
+          <span class="sev-stars">${starRow(c.sev,15)}</span>
+          <span class="sev-num">&minus;${c.sev}</span>
+          <span class="sev-label">severity</span>
+        </div>
+        ${unheard?'<span class="stamp">Unheard</span>':""}
+      </div>
+    </div>
+    <div class="chips">
+      <span class="chip cat">${esc(c.cat)}</span>
+      <span class="status ${c.status}">${statusLabel(c.status)}</span>
+    </div>
+    ${c.reply?replyBlock(c.reply):""}
+    ${opts.showRespond && !c.reply ? `<div class="respond-cta"><button onclick="openReply('${c.id}')">↩ Respond as the business (right of reply)</button></div>` : ""}
+    <div class="case-foot">
+      <span>Filed ${fmtDate(c.date)}</span><span class="dot"></span>
+      <span>${esc(c.author||"Registered submitter")}</span>
+      ${c.reply?'<span class="reply-flag">✓ Right of reply used</span>':'<span class="reply-flag" style="color:var(--amber)">Awaiting business response</span>'}
+    </div>
+  </article>`;
+}
+function replyBlock(r){
+  return `<div class="reply"><div class="reply-head">↩ Response from ${esc(r.by)} · ${fmtDate(r.date)}</div><p class="reply-body">${esc(r.text)}</p></div>`;
+}
+
+async function refreshFeed(){
+  const feed=document.getElementById("feed"); const rc=document.getElementById("rcount");
+  if(!feed) return;
+  const qs=new URLSearchParams({q:filters.q,cat:filters.cat,status:filters.status,sort:filters.sort});
+  try{
+    const {complaints}=await api("/api/complaints?"+qs.toString());
+    if(rc) rc.textContent=`${complaints.length} complaint${complaints.length===1?"":"s"}`;
+    if(!complaints.length){ feed.innerHTML=`<div class="empty"><div class="big">Nothing here. Suspiciously quiet.</div><div>Either nobody's filed that yet, or your filters are too tight. Loosen them and look again.</div></div>`; return; }
+    feed.innerHTML=complaints.map(c=>caseCard(c)).join("");
+  }catch(e){ feed.innerHTML=`<div class="empty"><div class="big">Couldn't reach the register.</div><div>${esc(e.message)}</div></div>`; }
+}
+
+let searchT;
+function wireHome(){
+  const q=document.getElementById("q");
+  if(q) q.oninput=e=>{ filters.q=e.target.value; clearTimeout(searchT); searchT=setTimeout(refreshFeed,180); };
+  const cat=document.getElementById("cat"); if(cat) cat.onchange=e=>{filters.cat=e.target.value; refreshFeed();};
+  const st=document.getElementById("status"); if(st) st.onchange=e=>{filters.status=e.target.value; refreshFeed();};
+  const so=document.getElementById("sort"); if(so) so.onchange=e=>{filters.sort=e.target.value; refreshFeed();};
+  refreshFeed();
+}
+
+/* ---------- business dossier ---------- */
+function viewBusiness(data){
+  const b=data.business, list=data.complaints, s=data.stats;
+  return `<main><div class="wrap">
+    <button class="backlink" onclick="go('home')">← The register</button>
+    <div class="dossier">
+      <div class="dossier-top">
+        <div style="flex:1;min-width:240px">
+          <h2>${esc(b.name)}</h2>
+          <div class="biz-meta"><span>${esc(b.kind||"Business")}</span><span>·</span><span>${esc(b.cat)}</span><span>·</span><span>${esc(b.loc)}</span></div>
+          <p style="color:var(--ink-soft);margin:16px 0 0;max-width:56ch">Public complaints register for ${esc(b.name)}. This page aggregates every unresolved complaint filed against this business. There is no positive-review side — a low or empty count means fewer people have reported being let down here.</p>
+        </div>
+        <div class="dossier-score">
+          <div class="big">&minus;${(s.avgSeverity||0).toFixed(1)}</div>
+          <div class="stars">${starRow(Math.round(s.avgSeverity||0),15)}</div>
+          <div class="lbl">Average severity</div>
+        </div>
+      </div>
+      <div class="dossier-stats">
+        <div class="dstat"><div class="n">${s.total}</div><div class="l">Complaints</div></div>
+        <div class="dstat"><div class="n bad">${s.unresolved}</div><div class="l">Unresolved</div></div>
+        <div class="dstat"><div class="n warn">${s.ignored}</div><div class="l">Ignored</div></div>
+        <div class="dstat"><div class="n good">${s.responded}</div><div class="l">Responses given</div></div>
+      </div>
+    </div>
+    <div class="section-rule"><h3>Complaints on record</h3><span class="line"></span></div>
+    <div class="feed">${list.map(c=>caseCard(c,{showRespond:true})).join("")}</div>
+    <div style="margin-top:26px;text-align:center">
+      <button class="btn accent" onclick="startComplaint('${b.slug}','${escAttr(b.name)}','${escAttr(b.cat)}')">Been let down by ${esc(b.name)} too? Add yours</button>
+    </div>
+  </div></main>`;
+}
+
+/* ---------- chrome: account + theme ---------- */
+function renderChrome(){
+  document.getElementById("markStars").innerHTML=starSVG(true,15)+starSVG(true,15);
+  const slot=document.getElementById("acctSlot");
+  if(account){
+    const initial=(account.email||"?").trim()[0].toUpperCase();
+    slot.innerHTML=`<div class="acct"><span class="av">${initial}</span><span>${esc(account.email)}</span><button class="close-x" title="Sign out" style="font-size:16px" onclick="signOut()">⏻</button></div>`;
+  } else {
+    slot.innerHTML=`<button class="btn ghost sm" onclick="openAuth()">Sign in</button>`;
+  }
+  document.getElementById("themeBtn").innerHTML = isDark()?sunIcon():moonIcon();
+}
+
+/* ---------- modal plumbing ---------- */
+function openModal(html){ document.getElementById("modalMount").innerHTML=html; document.getElementById("overlay").classList.add("open"); }
+function closeModal(){ document.getElementById("overlay").classList.remove("open"); document.getElementById("modalMount").innerHTML=""; }
+document.getElementById("overlay").addEventListener("click",e=>{ if(e.target.id==="overlay") closeModal(); });
+document.addEventListener("keydown",e=>{ if(e.key==="Escape") closeModal(); });
+function showErr(id,msg){ const el=document.getElementById(id); if(el){ el.textContent=msg; el.classList.add("show"); } }
+function hideErr(id){ const el=document.getElementById(id); if(el) el.classList.remove("show"); }
+
+/* ---------- auth (real: email + password, login/register) ---------- */
+let authMode="register";
+function openAuth(after){
+  openModal(`
+    <div class="modal">
+      <div class="modal-head">
+        <div><h3 id="authTitle">Create your free account</h3><p>Reading the register is always free and needs no account. A quick sign-in is required only to <em>file</em> a complaint — so you can track the business's response.</p></div>
+        <button class="close-x" onclick="closeModal()" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="auth-tabs" role="tablist">
+          <button role="tab" aria-selected="true" data-mode="register" onclick="setAuthMode('register')">Register</button>
+          <button role="tab" aria-selected="false" data-mode="login" onclick="setAuthMode('login')">Sign in</button>
+        </div>
+        <div class="form-err" id="authErr"></div>
+        <div class="field">
+          <label for="authEmail">Email address</label>
+          <input id="authEmail" type="email" placeholder="you@example.com" value="${account?escAttr(account.email):""}" autocomplete="email">
+        </div>
+        <div class="field">
+          <label for="authPass">Password <span class="hint">— at least 6 characters, stored hashed (scrypt)</span></label>
+          <input id="authPass" type="password" placeholder="••••••••" autocomplete="current-password">
+        </div>
+        <div class="form-note">Requiring a free account (rather than anonymous posting) is a deliberate choice: it cuts spam, lets submitters track replies, and keeps a light record trail that lowers false-complaint risk. This is a local prototype — the database lives on this machine only.</div>
+      </div>
+      <div class="modal-foot">
+        <div class="spacer"></div>
+        <button class="btn ghost" onclick="closeModal()">Cancel</button>
+        <button class="btn accent" id="authSubmit" onclick="doAuth('${after||""}')">Create account</button>
+      </div>
+    </div>`);
+  authMode="register"; setAuthMode("register");
+  setTimeout(()=>{const el=document.getElementById("authEmail"); if(el) el.focus();},60);
+}
+function setAuthMode(mode){
+  authMode=mode; hideErr("authErr");
+  document.querySelectorAll(".auth-tabs button").forEach(b=>b.setAttribute("aria-selected", b.dataset.mode===mode?"true":"false"));
+  document.getElementById("authTitle").textContent = mode==="register"?"Create your free account":"Welcome back";
+  document.getElementById("authSubmit").textContent = mode==="register"?"Create account":"Sign in";
+  const pass=document.getElementById("authPass"); if(pass) pass.setAttribute("autocomplete", mode==="register"?"new-password":"current-password");
+}
+async function doAuth(after){
+  hideErr("authErr");
+  const email=(document.getElementById("authEmail").value||"").trim();
+  const password=document.getElementById("authPass").value||"";
+  const btn=document.getElementById("authSubmit"); btn.disabled=true;
+  try{
+    const data=await api("/api/auth/"+authMode,{method:"POST",body:{email,password}});
+    account=data.user; renderChrome();
+    toast(authMode==="register"?"You're in.":"Signed in.");
+    closeModal();
+    openComplaintForm(after||"");
+  }catch(e){ showErr("authErr",e.message); btn.disabled=false; }
+}
+async function signOut(){
+  try{ await api("/api/auth/logout",{method:"POST"}); }catch(e){}
+  account=null; renderChrome(); toast("Signed out."); if(currentView.name!=="home") go("home");
+}
+
+/* ---------- file a complaint ---------- */
+function startComplaint(slug,name,cat){
+  if(!account){ openAuth(slug||""); return; }
+  openComplaintForm(slug||"", name||"", cat||"");
+}
+function openComplaintForm(slug,presetName,presetCat){
+  const preset=presetName||"";
+  const pcat=presetCat||"";
+  openModal(`
+    <div class="modal">
+      <div class="modal-head">
+        <div><h3>File a complaint</h3><p>Put an unresolved issue on the public record. Be factual and first-hand — the business gets a right of reply.</p></div>
+        <button class="close-x" onclick="closeModal()" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-err" id="cErr"></div>
+        <div class="field">
+          <label for="fBiz">Business / tradesperson</label>
+          <input id="fBiz" type="text" placeholder="e.g. Brightpath Builders" value="${escAttr(preset)}">
+        </div>
+        <div class="field row2">
+          <div class="field" style="gap:6px">
+            <label for="fCat">Category</label>
+            <select id="fCat">${CATEGORIES.map(c=>`<option ${c===pcat?"selected":""}>${c}</option>`).join("")}</select>
+          </div>
+          <div class="field" style="gap:6px">
+            <label for="fLoc">Location</label>
+            <input id="fLoc" type="text" placeholder="Town / region">
+          </div>
+        </div>
+        <div class="field">
+          <label>Severity <span class="hint">— how bad, on the zero-to-&minus;5 scale</span></label>
+          <div class="sev-pick" id="sevPick">
+            ${[1,2,3,4,5].map(n=>`<button type="button" data-sev="${n}" aria-pressed="${n===3?"true":"false"}"><span class="sn">&minus;${n}</span><span class="sl">${["minor","poor","serious","severe","egregious"][n-1]}</span></button>`).join("")}
+          </div>
+        </div>
+        <div class="field">
+          <label for="fTitle">Headline</label>
+          <input id="fTitle" type="text" placeholder="One line: what went wrong and how it was handled">
+        </div>
+        <div class="field">
+          <label for="fBody">What happened</label>
+          <textarea id="fBody" placeholder="Facts, dates, amounts. What you asked for and how the business responded (or didn't)."></textarea>
+        </div>
+        <div class="form-note">By filing you confirm this is a truthful, first-hand account. The business can respond publicly or ask moderators to review a disputed entry.</div>
+      </div>
+      <div class="modal-foot">
+        <span class="signed-as">Filing as ${account?esc(account.email):"—"}</span>
+        <div class="spacer"></div>
+        <button class="btn ghost" onclick="closeModal()">Cancel</button>
+        <button class="btn accent" id="cSubmit" onclick="submitComplaint()">Put it on the record</button>
+      </div>
+    </div>`);
+  let sev=3;
+  const pick=document.getElementById("sevPick");
+  pick.addEventListener("click",e=>{
+    const btn=e.target.closest("button[data-sev]"); if(!btn) return;
+    sev=+btn.dataset.sev;
+    pick.querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed", b===btn?"true":"false"));
+  });
+  window.__getSev=()=>sev;
+  setTimeout(()=>{const el=document.getElementById("fBiz"); if(el&&!el.value) el.focus(); else {const t=document.getElementById("fTitle"); if(t) t.focus();}},60);
+}
+async function submitComplaint(){
+  hideErr("cErr");
+  const payload={
+    business:(document.getElementById("fBiz").value||"").trim(),
+    cat:document.getElementById("fCat").value,
+    loc:(document.getElementById("fLoc").value||"").trim(),
+    severity:window.__getSev?window.__getSev():3,
+    title:(document.getElementById("fTitle").value||"").trim(),
+    body:(document.getElementById("fBody").value||"").trim()
+  };
+  const btn=document.getElementById("cSubmit"); btn.disabled=true;
+  try{
+    const data=await api("/api/complaints",{method:"POST",body:payload});
+    closeModal();
+    toast("On the record. They can't say they weren't told.",true);
+    filters.q=""; filters.cat="all"; filters.status="all"; filters.sort="recent";
+    go("business",data.slug);
+  }catch(e){ showErr("cErr",e.message); btn.disabled=false; }
+}
+
+/* ---------- right of reply ---------- */
+function openReply(publicId){
+  if(!account){ openAuth(); return; }
+  openModal(`
+    <div class="modal">
+      <div class="modal-head">
+        <div><h3>Right of reply</h3><p>Respond publicly to complaint <strong>${esc(publicId)}</strong>. Your response is shown directly beneath it and marks the case as answered.</p></div>
+        <button class="close-x" onclick="closeModal()" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-err" id="rErr"></div>
+        <div class="field">
+          <label for="rBy">Responding as</label>
+          <input id="rBy" type="text" placeholder="Business name">
+        </div>
+        <div class="field">
+          <label for="rText">Your response</label>
+          <textarea id="rText" placeholder="Acknowledge the issue and set out what you'll do about it."></textarea>
+        </div>
+        <div class="form-note">In production, posting as a business would require verifying ownership of that listing. This prototype lets any signed-in user demonstrate the flow.</div>
+      </div>
+      <div class="modal-foot">
+        <div class="spacer"></div>
+        <button class="btn ghost" onclick="closeModal()">Cancel</button>
+        <button class="btn accent" id="rSubmit" onclick="submitReply('${esc(publicId)}')">Post response</button>
+      </div>
+    </div>`);
+  setTimeout(()=>{const el=document.getElementById("rBy"); if(el) el.focus();},60);
+}
+async function submitReply(publicId){
+  hideErr("rErr");
+  const by=(document.getElementById("rBy").value||"").trim();
+  const text=(document.getElementById("rText").value||"").trim();
+  const btn=document.getElementById("rSubmit"); btn.disabled=true;
+  try{
+    await api("/api/complaints/"+encodeURIComponent(publicId)+"/reply",{method:"POST",body:{by,text}});
+    closeModal(); toast("Response posted — case marked answered.");
+    render();
+  }catch(e){ showErr("rErr",e.message); btn.disabled=false; }
+}
+
+/* ---------- theme ---------- */
+function isDark(){
+  const attr=document.documentElement.getAttribute("data-theme");
+  if(attr) return attr==="dark";
+  return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+function toggleTheme(){ document.documentElement.setAttribute("data-theme", isDark()?"light":"dark"); renderChrome(); }
+document.getElementById("themeBtn").addEventListener("click",toggleTheme);
+function moonIcon(){return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>`;}
+function sunIcon(){return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M19.1 4.9l-1.8 1.8M6.7 17.3l-1.8 1.8"/></svg>`;}
+
+/* ---------- toast ---------- */
+let toastT;
+function toast(msg,star){
+  const t=document.getElementById("toast");
+  t.innerHTML=(star?'<span class="t-star">'+starSVG(true,15)+'</span>':"")+esc(msg);
+  t.classList.add("show"); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove("show"),2600);
+}
+
+/* ---------- boot ---------- */
+(async function(){
+  try{ const me=await api("/api/auth/me"); account=me.user; }catch(e){}
+  render();
+})();

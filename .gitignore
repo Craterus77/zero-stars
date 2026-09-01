@@ -1,0 +1,12 @@
+# dependencies
+node_modules/
+
+# local SQLite database (regenerated from seed on first run)
+zerostars.db
+zerostars.db-wal
+zerostars.db-shm
+
+# logs / os
+*.log
+.DS_Store
+Thumbs.db

@@ -1,0 +1,811 @@
+<title>Zero Stars</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+  /* ---------- Tokens: light is the base, dark redefines only tokens ---------- */
+  :root{
+    --paper:#e9e7e2;        /* page ground - picked warm grey, not cream */
+    --surface:#fbfaf7;      /* case cards */
+    --surface-2:#f2f0ea;    /* insets, filters */
+    --ink:#211d19;
+    --ink-soft:#6a6055;
+    --ink-faint:#948a7c;
+    --line:#d9d3c8;
+    --line-strong:#c4bcae;
+    --accent:#a83a2c;       /* oxblood - severity */
+    --accent-ink:#8f2f22;
+    --accent-wash:#f3e2de;
+    --amber:#a9671a;        /* ignored / stonewalled */
+    --amber-wash:#f3e7d2;
+    --teal:#2f6e68;         /* business response / resolved */
+    --teal-wash:#dcebe8;
+    --stamp:#a83a2c;
+    --shadow:0 1px 0 rgba(33,29,25,.03), 0 8px 26px -18px rgba(33,29,25,.35);
+    --maxw:1120px;
+  }
+  :root:not([data-theme="light"]){
+    @media (prefers-color-scheme: dark){
+      --paper:#16130f;
+      --surface:#201c16;
+      --surface-2:#1a1611;
+      --ink:#ece6db;
+      --ink-soft:#a79d8d;
+      --ink-faint:#7c7264;
+      --line:#332d24;
+      --line-strong:#463d31;
+      --accent:#e0705d;
+      --accent-ink:#e88b7a;
+      --accent-wash:#39201a;
+      --amber:#d59a45;
+      --amber-wash:#332714;
+      --teal:#63a89e;
+      --teal-wash:#16302c;
+      --stamp:#e0705d;
+      --shadow:0 1px 0 rgba(0,0,0,.2), 0 12px 30px -18px rgba(0,0,0,.7);
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#16130f;
+    --surface:#201c16;
+    --surface-2:#1a1611;
+    --ink:#ece6db;
+    --ink-soft:#a79d8d;
+    --ink-faint:#7c7264;
+    --line:#332d24;
+    --line-strong:#463d31;
+    --accent:#e0705d;
+    --accent-ink:#e88b7a;
+    --accent-wash:#39201a;
+    --amber:#d59a45;
+    --amber-wash:#332714;
+    --teal:#63a89e;
+    --teal-wash:#16302c;
+    --stamp:#e0705d;
+    --shadow:0 1px 0 rgba(0,0,0,.2), 0 12px 30px -18px rgba(0,0,0,.7);
+  }
+
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:"Newsreader",Georgia,"Times New Roman",serif;
+    font-size:17px;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+  }
+  .sans{font-family:"Archivo","Helvetica Neue",Arial,sans-serif}
+  .mono{font-family:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace}
+  h1,h2,h3,.eyebrow,.wordmark,button,input,select,textarea,label,.chip,.tag{font-family:"Archivo","Helvetica Neue",Arial,sans-serif}
+  a{color:inherit}
+  button{cursor:pointer;font:inherit}
+  ::selection{background:var(--accent);color:#fff}
+  :focus-visible{outline:2.5px solid var(--accent);outline-offset:2px;border-radius:3px}
+
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 22px}
+
+  /* ---------- Masthead ---------- */
+  header.mast{
+    border-bottom:2px solid var(--ink);
+    background:var(--paper);
+    position:sticky;top:0;z-index:40;
+  }
+  .mast-row{display:flex;align-items:center;gap:20px;padding:14px 0}
+  .wordmark{display:flex;align-items:baseline;gap:9px;cursor:pointer;user-select:none;border:none;background:none;padding:0;color:var(--ink)}
+  .wordmark .zs-stars{display:inline-flex;gap:2px}
+  .wordmark b{font-weight:900;font-size:23px;letter-spacing:-.02em;line-height:1}
+  .wordmark .sub{font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-soft);font-weight:700}
+  .mast-spacer{flex:1}
+  .mast-actions{display:flex;align-items:center;gap:10px}
+
+  .btn{
+    border:1.5px solid var(--ink);background:var(--ink);color:var(--paper);
+    padding:9px 15px;border-radius:2px;font-weight:700;font-size:13.5px;letter-spacing:.01em;
+    display:inline-flex;align-items:center;gap:8px;transition:transform .08s ease, background .15s ease;
+  }
+  .btn:hover{transform:translateY(-1px)}
+  .btn:active{transform:translateY(0)}
+  .btn.accent{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.ghost{background:transparent;color:var(--ink);border-color:var(--line-strong)}
+  .btn.ghost:hover{border-color:var(--ink)}
+  .btn.sm{padding:6px 11px;font-size:12px}
+  .icon-btn{border:1.5px solid var(--line-strong);background:var(--surface);color:var(--ink);width:38px;height:38px;border-radius:2px;display:grid;place-items:center}
+  .icon-btn:hover{border-color:var(--ink)}
+
+  /* ---------- Hero / thesis ---------- */
+  .hero{border-bottom:1px solid var(--line);padding:34px 0 30px;background:linear-gradient(180deg,var(--surface-2),var(--paper))}
+  .hero-grid{display:grid;grid-template-columns:1.55fr .95fr;gap:40px;align-items:end}
+  .eyebrow{font-size:11px;letter-spacing:.24em;text-transform:uppercase;color:var(--accent);font-weight:800;margin:0 0 14px}
+  h1.title{font-family:"Archivo";font-weight:900;font-size:clamp(38px,6.4vw,72px);line-height:.94;letter-spacing:-.03em;margin:0;text-wrap:balance}
+  h1.title em{font-style:normal;color:var(--accent)}
+  .lede{font-size:19px;line-height:1.42;color:var(--ink-soft);margin:20px 0 0;max-width:38ch}
+  .hero-stats{display:flex;flex-direction:column;gap:14px;border-left:2px solid var(--ink);padding-left:20px}
+  .hstat{display:flex;flex-direction:column}
+  .hstat .n{font-family:"Archivo";font-weight:800;font-size:34px;line-height:1;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .hstat .n.neg{color:var(--accent)}
+  .hstat .l{font-family:"IBM Plex Mono";font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-faint);margin-top:5px}
+
+  /* ---------- Register / filter bar ---------- */
+  .register{position:sticky;top:69px;z-index:30;background:var(--paper);border-bottom:1px solid var(--line);padding:12px 0}
+  .reg-inner{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .searchbox{flex:1;min-width:220px;display:flex;align-items:center;gap:9px;background:var(--surface);border:1.5px solid var(--line-strong);border-radius:2px;padding:0 12px}
+  .searchbox:focus-within{border-color:var(--ink)}
+  .searchbox input{border:none;background:none;outline:none;color:var(--ink);padding:11px 0;flex:1;font-size:14.5px;font-weight:500}
+  .searchbox svg{flex:none;color:var(--ink-faint)}
+  select.filter{appearance:none;background:var(--surface);border:1.5px solid var(--line-strong);border-radius:2px;color:var(--ink);padding:11px 34px 11px 12px;font-size:13.5px;font-weight:600;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236a6055' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 11px center}
+  select.filter:hover{border-color:var(--ink)}
+  .result-count{font-family:"IBM Plex Mono";font-size:12px;color:var(--ink-faint);margin-left:auto;white-space:nowrap}
+
+  main{padding:26px 0 60px;min-height:50vh}
+
+  /* ---------- Case card ---------- */
+  .feed{display:flex;flex-direction:column;gap:14px}
+  .case{background:var(--surface);border:1px solid var(--line);border-radius:3px;box-shadow:var(--shadow);overflow:hidden}
+  .case-top{display:flex;gap:16px;padding:16px 18px 4px}
+  .case-main{flex:1;min-width:0}
+  .case-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:7px}
+  .caseid{font-family:"IBM Plex Mono";font-size:11.5px;font-weight:600;color:var(--ink-faint);letter-spacing:.02em}
+  .biz-link{font-family:"Archivo";font-weight:800;font-size:19px;letter-spacing:-.01em;color:var(--ink);text-decoration:none;border:none;background:none;padding:0;cursor:pointer;text-align:left;line-height:1.15}
+  .biz-link:hover{color:var(--accent);text-decoration:underline;text-underline-offset:3px}
+  .biz-sub{font-family:"IBM Plex Mono";font-size:11px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.04em}
+  .headline{font-family:"Archivo";font-weight:700;font-size:16.5px;line-height:1.25;margin:9px 0 6px;letter-spacing:-.005em}
+  .body-excerpt{color:var(--ink-soft);font-size:16px;line-height:1.5;margin:0}
+  .case-side{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:8px;width:130px}
+
+  .sev{display:flex;flex-direction:column;align-items:flex-end;gap:3px}
+  .sev-stars{display:inline-flex;gap:2px}
+  .sev-num{font-family:"Archivo";font-weight:900;font-size:22px;color:var(--accent);line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+  .sev-label{font-family:"IBM Plex Mono";font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint)}
+
+  .chips{display:flex;gap:7px;flex-wrap:wrap;padding:8px 18px 14px}
+  .chip{font-family:"Archivo";font-size:11px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;padding:4px 9px;border-radius:2px;border:1px solid var(--line-strong);color:var(--ink-soft);background:var(--surface-2)}
+  .chip.cat{color:var(--ink);border-color:var(--line-strong)}
+  .status{display:inline-flex;align-items:center;gap:6px;font-family:"Archivo";font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;padding:4px 9px;border-radius:2px}
+  .status::before{content:"";width:7px;height:7px;border-radius:50%}
+  .status.unresolved{color:var(--accent);background:var(--accent-wash)}
+  .status.unresolved::before{background:var(--accent)}
+  .status.ignored{color:var(--amber);background:var(--amber-wash)}
+  .status.ignored::before{background:var(--amber)}
+  .status.responded{color:var(--teal);background:var(--teal-wash)}
+  .status.responded::before{background:var(--teal)}
+
+  .case-foot{display:flex;align-items:center;gap:14px;padding:11px 18px;border-top:1px dashed var(--line);font-family:"IBM Plex Mono";font-size:11.5px;color:var(--ink-faint)}
+  .case-foot .dot{width:3px;height:3px;border-radius:50%;background:var(--ink-faint)}
+  .case-foot .reply-flag{color:var(--teal);font-weight:600;margin-left:auto}
+
+  /* reply block */
+  .reply{margin:2px 18px 16px;border-left:3px solid var(--teal);background:var(--teal-wash);padding:12px 15px;border-radius:0 3px 3px 0}
+  .reply-head{font-family:"Archivo";font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--teal);margin-bottom:5px;display:flex;align-items:center;gap:7px}
+  .reply-body{font-size:15px;color:var(--ink-soft);line-height:1.45;margin:0}
+
+  /* stamp */
+  .stamp{border:2px solid var(--stamp);color:var(--stamp);font-family:"Archivo";font-weight:900;font-size:12px;letter-spacing:.14em;padding:3px 8px;border-radius:2px;transform:rotate(-4deg);opacity:.82;text-transform:uppercase}
+
+  /* ---------- Business dossier ---------- */
+  .backlink{background:none;border:none;color:var(--ink-soft);font-family:"Archivo";font-weight:700;font-size:13px;padding:0;display:inline-flex;align-items:center;gap:7px;margin-bottom:18px}
+  .backlink:hover{color:var(--accent)}
+  .dossier{background:var(--surface);border:1px solid var(--line);border-radius:3px;box-shadow:var(--shadow);padding:26px;margin-bottom:22px}
+  .dossier-top{display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start}
+  .dossier h2{font-family:"Archivo";font-weight:900;font-size:clamp(28px,4vw,42px);letter-spacing:-.025em;margin:0;line-height:1}
+  .dossier .biz-meta{font-family:"IBM Plex Mono";font-size:12.5px;color:var(--ink-faint);margin-top:9px;text-transform:uppercase;letter-spacing:.04em;display:flex;gap:8px;flex-wrap:wrap}
+  .dossier-score{flex:none;text-align:center;border:2px solid var(--ink);border-radius:3px;padding:14px 22px;min-width:150px}
+  .dossier-score .big{font-family:"Archivo";font-weight:900;font-size:46px;line-height:1;color:var(--accent);font-variant-numeric:tabular-nums;letter-spacing:-.03em}
+  .dossier-score .lbl{font-family:"IBM Plex Mono";font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);margin-top:6px}
+  .dossier-score .stars{margin-top:8px;display:flex;justify-content:center;gap:3px}
+  .dossier-stats{display:flex;gap:0;margin-top:22px;border-top:1px solid var(--line);flex-wrap:wrap}
+  .dstat{flex:1;min-width:110px;padding:15px 4px 2px}
+  .dstat + .dstat{border-left:1px solid var(--line)}
+  .dstat .n{font-family:"Archivo";font-weight:800;font-size:24px;font-variant-numeric:tabular-nums}
+  .dstat .n.warn{color:var(--amber)}.dstat .n.bad{color:var(--accent)}.dstat .n.good{color:var(--teal)}
+  .dstat .l{font-family:"IBM Plex Mono";font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-faint);margin-top:3px}
+  .section-rule{display:flex;align-items:center;gap:14px;margin:26px 0 16px}
+  .section-rule h3{font-family:"Archivo";font-weight:800;font-size:14px;letter-spacing:.08em;text-transform:uppercase;margin:0;color:var(--ink)}
+  .section-rule .line{flex:1;height:1px;background:var(--line-strong)}
+
+  /* ---------- Modal / forms ---------- */
+  .overlay{position:fixed;inset:0;background:rgba(20,16,12,.55);backdrop-filter:blur(3px);z-index:100;display:none;align-items:flex-start;justify-content:center;padding:40px 18px;overflow:auto}
+  .overlay.open{display:flex}
+  .modal{background:var(--surface);border:1px solid var(--line-strong);border-radius:4px;max-width:560px;width:100%;box-shadow:0 30px 80px -20px rgba(0,0,0,.5);animation:pop .18s ease}
+  @keyframes pop{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+  @media (prefers-reduced-motion:reduce){.modal{animation:none}.btn:hover{transform:none}}
+  .modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:22px 24px 6px}
+  .modal-head h3{font-family:"Archivo";font-weight:900;font-size:22px;letter-spacing:-.01em;margin:0}
+  .modal-head p{color:var(--ink-soft);font-size:15px;margin:6px 0 0}
+  .modal-body{padding:16px 24px 24px;display:flex;flex-direction:column;gap:15px}
+  .close-x{border:none;background:none;color:var(--ink-faint);font-size:24px;line-height:1;padding:0 2px}
+  .close-x:hover{color:var(--ink)}
+  .field{display:flex;flex-direction:column;gap:6px}
+  .field label{font-family:"Archivo";font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-soft)}
+  .field .hint{font-family:"IBM Plex Mono";font-size:10.5px;color:var(--ink-faint);text-transform:none;letter-spacing:0}
+  .field input,.field select,.field textarea{background:var(--surface-2);border:1.5px solid var(--line-strong);border-radius:2px;color:var(--ink);padding:11px 12px;font-size:15px;font-family:"Newsreader",serif;width:100%}
+  .field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--ink)}
+  .field textarea{min-height:120px;resize:vertical;line-height:1.5}
+  .field.row2{display:grid;grid-template-columns:1fr 1fr;gap:15px}
+  .sev-pick{display:flex;gap:8px}
+  .sev-pick button{flex:1;border:1.5px solid var(--line-strong);background:var(--surface-2);border-radius:2px;padding:10px 4px;display:flex;flex-direction:column;align-items:center;gap:4px;color:var(--ink-soft)}
+  .sev-pick button .sn{font-family:"Archivo";font-weight:900;font-size:18px}
+  .sev-pick button .sl{font-family:"IBM Plex Mono";font-size:8.5px;letter-spacing:.04em;text-transform:uppercase}
+  .sev-pick button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-wash);color:var(--accent)}
+  .form-note{font-family:"IBM Plex Mono";font-size:11px;line-height:1.5;color:var(--ink-faint);background:var(--surface-2);border:1px dashed var(--line-strong);border-radius:2px;padding:11px 12px}
+  .modal-foot{display:flex;gap:10px;align-items:center;padding:4px 24px 22px}
+  .modal-foot .spacer{flex:1}
+  .signed-as{font-family:"IBM Plex Mono";font-size:11px;color:var(--ink-faint)}
+
+  /* toast */
+  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);background:var(--ink);color:var(--paper);font-family:"Archivo";font-weight:600;font-size:14px;padding:13px 20px;border-radius:3px;box-shadow:0 16px 40px -12px rgba(0,0,0,.5);z-index:200;opacity:0;pointer-events:none;transition:.25s ease;display:flex;align-items:center;gap:10px}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .toast .t-star{color:var(--accent)}
+
+  .empty{text-align:center;padding:60px 20px;color:var(--ink-faint)}
+  .empty .big{font-family:"Archivo";font-weight:800;font-size:20px;color:var(--ink-soft);margin-bottom:6px}
+
+  /* account chip */
+  .acct{display:flex;align-items:center;gap:8px;font-family:"IBM Plex Mono";font-size:11.5px;color:var(--ink-soft);border:1.5px solid var(--line-strong);border-radius:2px;padding:6px 10px}
+  .acct .av{width:20px;height:20px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-family:"Archivo";font-weight:800;font-size:11px}
+
+  footer{border-top:2px solid var(--ink);background:var(--surface-2);padding:34px 0 40px}
+  .foot-grid{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:30px}
+  footer h4{font-family:"Archivo";font-weight:800;font-size:12px;letter-spacing:.1em;text-transform:uppercase;margin:0 0 12px;color:var(--ink)}
+  footer p,footer li{font-size:14px;color:var(--ink-soft);line-height:1.55}
+  footer ul{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:7px}
+  footer .disc{font-family:"IBM Plex Mono";font-size:11px;color:var(--ink-faint);line-height:1.6;margin-top:24px;border-top:1px solid var(--line);padding-top:16px}
+
+  @media (max-width:820px){
+    .hero-grid{grid-template-columns:1fr;gap:26px}
+    .hero-stats{flex-direction:row;border-left:none;border-top:2px solid var(--ink);padding-left:0;padding-top:16px;gap:28px}
+    .foot-grid{grid-template-columns:1fr}
+    .register{top:63px}
+  }
+  @media (max-width:620px){
+    body{font-size:16px}
+    .case-top{flex-direction:column;gap:10px}
+    .case-side{flex-direction:row;width:auto;align-items:center;justify-content:space-between;width:100%}
+    .sev{flex-direction:row;align-items:center;gap:8px}
+    .field.row2{grid-template-columns:1fr}
+    .dossier-top{flex-direction:column}
+    .result-count{margin-left:0;width:100%}
+    .mast .sub{display:none}
+  }
+</style>
+
+<header class="mast">
+  <div class="wrap mast-row">
+    <button class="wordmark" onclick="go('home')" aria-label="Zero Stars home">
+      <span class="zs-stars" id="markStars"></span>
+      <span style="display:flex;flex-direction:column;align-items:flex-start;line-height:1">
+        <b>ZERO&nbsp;STARS</b>
+        <span class="sub">The unresolved-complaints register</span>
+      </span>
+    </button>
+    <div class="mast-spacer"></div>
+    <div class="mast-actions">
+      <div id="acctSlot"></div>
+      <button class="icon-btn" id="themeBtn" title="Toggle theme" aria-label="Toggle light or dark theme"></button>
+      <button class="btn accent" onclick="startComplaint()">Make yourself heard</button>
+    </div>
+  </div>
+</header>
+
+<div id="app"></div>
+
+<footer>
+  <div class="wrap foot-grid">
+    <div>
+      <h4>Zero Stars</h4>
+      <p>A complaints-only public register for people who were not heard. No five-star side, no glowing reviews — a documented record of where a company, tradesperson, or service provider let someone down, from a faulty kettle to a house build gone wrong.</p>
+    </div>
+    <div>
+      <h4>How it works</h4>
+      <ul>
+        <li>Anyone can read and search — free, no account.</li>
+        <li>Filing a complaint needs a free account, so you can track responses.</li>
+        <li>Every business gets a public right of reply.</li>
+        <li>Ratings run <strong>zero to &minus;5</strong> — never positive.</li>
+      </ul>
+    </div>
+    <div>
+      <h4>Fair use</h4>
+      <ul>
+        <li>Complaints must be truthful and first-hand.</li>
+        <li>Businesses may respond or flag a case as resolved.</li>
+        <li>Disputed entries go to moderation review.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="wrap"><p class="disc">Prototype / concept demo. All businesses, complaints and responses shown are fictional and generated for demonstration only — any resemblance to a real company is coincidental. Not a live service; nothing submitted here is published or stored beyond your own browser.</p></div>
+</footer>
+
+<div class="overlay" id="overlay"><div id="modalMount"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ================= Data ================= */
+const CATEGORIES = ["Trades & Construction","Retail","Warranty & Insurance","Customer Service","Professional Services","Other"];
+
+const SEED_BUSINESS = {
+  "brightpath-builders":{name:"Brightpath Builders",cat:"Trades & Construction",loc:"Sydney, NSW",kind:"Building contractor"},
+  "nimbus-broadband":{name:"Nimbus Broadband",cat:"Customer Service",loc:"National, AU",kind:"Internet provider"},
+  "kettle-crumb":{name:"Kettle & Crumb Appliances",cat:"Retail",loc:"Melbourne, VIC",kind:"Appliance retailer"},
+  "meridian-cover":{name:"Meridian Home Cover",cat:"Warranty & Insurance",loc:"Brisbane, QLD",kind:"Home insurer"},
+  "vale-rowan":{name:"Vale & Rowan Solicitors",cat:"Professional Services",loc:"Perth, WA",kind:"Conveyancing firm"},
+  "coastline-movers":{name:"Coastline Movers",cat:"Other",loc:"Gold Coast, QLD",kind:"Removals company"},
+  "pixelforge":{name:"PixelForge Electronics",cat:"Retail",loc:"Online, AU",kind:"Electronics retailer"},
+  "fjord-motors":{name:"Fjord Motors",cat:"Other",loc:"Adelaide, SA",kind:"Car manufacturer"}
+};
+
+const SEED_COMPLAINTS = [
+  {id:"ZS-1042",biz:"brightpath-builders",sev:5,status:"unresolved",author:"Homeowner, Sydney",date:"2026-08-19",
+   title:"$240k extension abandoned at first-fix, six months on",
+   body:"Paid 70% up front against the schedule. Work stopped in February with the roof open and no watertight cover. Every call for a completion date goes unanswered; the site manager's number is disconnected. I now have water damage to the original structure and no written explanation.",
+   reply:null},
+  {id:"ZS-1039",biz:"brightpath-builders",sev:4,status:"responded",author:"Verified customer",date:"2026-07-30",
+   title:"Snagging list ignored past the retention deadline",
+   body:"Handover was March. The agreed snagging list — cracked render, two doors that won't close, a leaking ensuite — is still open. The retention was released and now nobody will book the remedial visit.",
+   reply:{by:"Brightpath Builders",date:"2026-08-04",text:"We've logged this and a site supervisor will contact you this week to schedule the outstanding items. We apologise for the delay caused by staffing changes over the summer."}},
+  {id:"ZS-1017",biz:"brightpath-builders",sev:4,status:"ignored",author:"Homeowner, Newcastle NSW",date:"2026-06-11",
+   title:"Deposit taken for a job that never started",
+   body:"Handed over a $3,500 deposit in April for a garage conversion. Start date came and went three times. No materials ordered, no permit applied for. Emails now bounce.",
+   reply:null},
+
+  {id:"ZS-0994",biz:"nimbus-broadband",sev:3,status:"ignored",author:"Account holder",date:"2026-08-22",
+   title:"Charged for 900Mb, delivered 40Mb, four engineers no-show",
+   body:"Sold a gigabit package. Actual line speed has never exceeded 40Mb. Four engineer visits were booked; nobody arrived on any of them. Support closes the ticket each time without contacting me and the credit I was promised never appeared.",
+   reply:null},
+  {id:"ZS-0981",biz:"nimbus-broadband",sev:4,status:"unresolved",author:"Small business owner",date:"2026-08-02",
+   title:"Cancelled my business line by mistake — 9 days offline",
+   body:"They cancelled the wrong account during a house-move transfer. My card terminal and phones were dead for nine trading days. I've spent 14 hours on hold across two weeks and still have no reconnection date.",
+   reply:{by:"Nimbus Broadband",date:"2026-08-06",text:"This was a provisioning error on our side. A priority reconnection is in progress and a goodwill credit will be applied. A named case handler will stay with your account until it is resolved."}},
+
+  {id:"ZS-0955",biz:"kettle-crumb",sev:2,status:"ignored",author:"Customer",date:"2026-08-14",
+   title:"Warranty refused on a 5-month-old dishwasher",
+   body:"The dishwasher failed at five months. They claim 'misuse' with no inspection and no evidence, and won't escalate. I've supplied the receipt and photos three times.",
+   reply:null},
+  {id:"ZS-0940",biz:"kettle-crumb",sev:3,status:"unresolved",author:"Verified customer",date:"2026-07-21",
+   title:"Refund promised in writing, withheld for 11 weeks",
+   body:"Returned a faulty oven under the 30-day right. Refund was confirmed by email on 6 May. It's now late July, the money has not arrived, and each chat agent tells me to 'allow 5 working days'.",
+   reply:null},
+
+  {id:"ZS-0912",biz:"meridian-cover",sev:5,status:"unresolved",author:"Policyholder",date:"2026-08-25",
+   title:"Escape-of-water claim denied on a clause never disclosed",
+   body:"A burst pipe caused $18k of damage. The claim was denied citing a maintenance exclusion that isn't in the policy summary I was sold. The loss adjuster stopped responding after the first visit and the complaints line loops back to the same denial letter.",
+   reply:null},
+  {id:"ZS-0907",biz:"meridian-cover",sev:3,status:"responded",author:"Customer",date:"2026-07-09",
+   title:"Auto-renewed at double the price with no notice",
+   body:"Renewed automatically at 214% of last year's premium. No renewal notice ever arrived by post or email, and they refused to honour the cheaper quote still live on their own site that day.",
+   reply:{by:"Meridian Home Cover",date:"2026-07-15",text:"We've reviewed the renewal notice delivery and can see it did not reach you. We've cancelled the renewal, refunded the difference, and are correcting the contact record. Thank you for flagging it."}},
+
+  {id:"ZS-0888",biz:"vale-rowan",sev:4,status:"ignored",author:"House buyer",date:"2026-08-05",
+   title:"Missed exchange deadline, then went silent for 3 weeks",
+   body:"Our conveyancer missed the agreed exchange date, which collapsed the chain. Since then, no call has been returned and the client portal shows 'awaiting solicitor' with no movement. We may lose the property and our mortgage offer.",
+   reply:null},
+
+  {id:"ZS-0864",biz:"coastline-movers",sev:3,status:"unresolved",author:"Customer",date:"2026-07-28",
+   title:"Damaged half the load, claim form is a dead link",
+   body:"Two wardrobes and a dresser arrived broken. The 'damage claim' link in their confirmation email 404s, the office voicemail is full, and the WhatsApp number was blocked after I sent photos.",
+   reply:null},
+
+  {id:"ZS-0831",biz:"pixelforge",sev:2,status:"responded",author:"Verified customer",date:"2026-08-11",
+   title:"Sent the wrong laptop, then charged a restocking fee to fix it",
+   body:"Ordered a 16GB model, received an 8GB one. To correct their own mistake they wanted a 15% restocking fee and two weeks without a machine I'd already paid for.",
+   reply:{by:"PixelForge Electronics",date:"2026-08-13",text:"You're right — a restocking fee should never apply to a mis-ship on our part. We've waived it, arranged a free collection, and dispatched the correct unit today. We're sorry for the hassle."}},
+  {id:"ZS-0820",biz:"pixelforge",sev:3,status:"ignored",author:"Customer",date:"2026-06-30",
+   title:"'Next-day' order arrived in 3 weeks, support bot won't escalate",
+   body:"Paid for next-day delivery. It took 22 days. Every attempt to reach a human loops back to a chatbot that closes the conversation, and the delivery fee refund was declined automatically.",
+   reply:null},
+
+  {id:"ZS-0788",biz:"fjord-motors",sev:5,status:"ignored",author:"Owner, verified purchase",date:"2026-08-16",
+   title:"New SUV with a string of faults from week one — dealer keeps sending it back 'no fault found'",
+   body:"A $52,000 SUV, three months old, with a running list of faults: a transmission that shudders between gears, driver-assist that brakes for nothing on an empty road, water pooling in the passenger footwell, and a dashboard that resets itself while driving. Four dealer visits, four 'no fault found' reports, and now they say it's out of goodwill. The vehicle isn't safe and nobody at Fjord will escalate it.",
+   reply:null},
+  {id:"ZS-0781",biz:"fjord-motors",sev:4,status:"unresolved",author:"Fleet buyer",date:"2026-07-19",
+   title:"Open safety recall, parts 'on back-order' for five months while the fault continues",
+   body:"Two vehicles under an open safety recall for a faulty fuel-level sensor. Fjord confirmed the recall in writing, but the parts have been 'on back-order' for five months. We're told to keep driving them in the meantime — no loaner, no timeline, no escalation path.",
+   reply:null}
+];
+
+/* ================= State / storage ================= */
+const LS_USER="zs_user_v1", LS_SUBS="zs_subs_v1";
+let account=null, userSubs=[];
+try{const u=localStorage.getItem(LS_USER); if(u) account=JSON.parse(u);}catch(e){}
+try{const s=localStorage.getItem(LS_SUBS); if(s) userSubs=JSON.parse(s)||[];}catch(e){}
+
+function saveUser(){try{localStorage.setItem(LS_USER,JSON.stringify(account))}catch(e){}}
+function saveSubs(){try{localStorage.setItem(LS_SUBS,JSON.stringify(userSubs))}catch(e){}}
+
+function allBusinesses(){
+  const map={};
+  for(const k in SEED_BUSINESS) map[k]={slug:k,...SEED_BUSINESS[k]};
+  userSubs.forEach(c=>{ if(!map[c.biz]) map[c.biz]={slug:c.biz,name:c.bizName,cat:c.cat,loc:c.loc||"—",kind:"Business"}; });
+  return map;
+}
+function allComplaints(){ return [...userSubs, ...SEED_COMPLAINTS]; }
+function complaintsFor(slug){ return allComplaints().filter(c=>c.biz===slug); }
+
+/* ================= Star / severity rendering ================= */
+function starSVG(filled,size){
+  const s=size||14;
+  const col=filled?"var(--accent)":"none";
+  const stroke=filled?"var(--accent)":"var(--line-strong)";
+  return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="${col}" stroke="${stroke}" stroke-width="1.6" stroke-linejoin="round" style="transform:rotate(180deg)"><path d="M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17.8 5.9 21.4l1.4-6.8-5.1-4.7 6.9-.8z"/></svg>`;
+}
+function starRow(sev,size){
+  let h=""; for(let i=1;i<=5;i++) h+=starSVG(i<=sev,size); return h;
+}
+function markStars(){ // small wordmark stars (2, both filled, downward)
+  return starSVG(true,15)+starSVG(true,15);
+}
+
+/* ================= Router ================= */
+let currentView={name:"home"};
+function go(name,arg){ currentView={name,arg}; window.scrollTo({top:0,behavior:"instant"in window?"instant":"auto"}); render(); }
+
+/* ================= Filters ================= */
+const filters={q:"",cat:"all",status:"all",sort:"recent"};
+
+function render(){
+  renderAccount();
+  const app=document.getElementById("app");
+  if(currentView.name==="business"){ app.innerHTML=viewBusiness(currentView.arg); }
+  else { app.innerHTML=viewHome(); wireHome(); }
+}
+
+/* ---------- Home ---------- */
+function viewHome(){
+  const comps=allComplaints();
+  const businesses=allBusinesses();
+  const total=comps.length;
+  const unresolved=comps.filter(c=>c.status!=="responded").length;
+  const avg=(comps.reduce((a,c)=>a+c.sev,0)/comps.length);
+  const bizCount=Object.keys(businesses).length;
+
+  return `
+  <section class="hero">
+    <div class="wrap hero-grid">
+      <div>
+        <p class="eyebrow">For the unheard, the unheeded and the unbelievably pissed off</p>
+        <h1 class="title">When one star is <em>one too many.</em></h1>
+        <p class="lede">A free, public register for people who weren't heard. Search what a business is accused of before you hand over a deposit — and put your own unresolved complaint on the record.</p>
+      </div>
+      <div class="hero-stats">
+        <div class="hstat"><span class="n neg mono">&minus;${avg.toFixed(1)}</span><span class="l">Register-wide average</span></div>
+        <div class="hstat"><span class="n">${total}</span><span class="l">Logged complaints</span></div>
+        <div class="hstat"><span class="n" style="color:var(--amber)">${unresolved}</span><span class="l">Still unresolved</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="register">
+    <div class="wrap reg-inner">
+      <div class="searchbox">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        <input id="q" type="search" placeholder="Search a business, trade, or town…" value="${escAttr(filters.q)}" autocomplete="off">
+      </div>
+      <select class="filter" id="cat">
+        <option value="all">All categories</option>
+        ${CATEGORIES.map(c=>`<option value="${c}" ${filters.cat===c?"selected":""}>${c}</option>`).join("")}
+      </select>
+      <select class="filter" id="status">
+        <option value="all">Any status</option>
+        <option value="unresolved" ${filters.status==="unresolved"?"selected":""}>Unresolved</option>
+        <option value="ignored" ${filters.status==="ignored"?"selected":""}>Ignored / stonewalled</option>
+        <option value="responded" ${filters.status==="responded"?"selected":""}>Business responded</option>
+      </select>
+      <select class="filter" id="sort">
+        <option value="recent" ${filters.sort==="recent"?"selected":""}>Most recent</option>
+        <option value="severe" ${filters.sort==="severe"?"selected":""}>Most severe</option>
+        <option value="business" ${filters.sort==="business"?"selected":""}>By business</option>
+      </select>
+      <span class="result-count" id="rcount"></span>
+    </div>
+  </section>
+
+  <main><div class="wrap"><div class="feed" id="feed"></div></div></main>`;
+}
+
+function statusLabel(s){ return s==="responded"?"Business responded":s==="ignored"?"Ignored / stonewalled":"Unresolved"; }
+
+function caseCard(c,businesses){
+  const b=businesses[c.biz]||{name:c.bizName||"Unknown business",cat:c.cat,loc:"—"};
+  const unheard = c.status!=="responded";
+  return `
+  <article class="case">
+    <div class="case-top">
+      <div class="case-main">
+        <div class="case-meta">
+          <span class="caseid">${c.id}</span>
+          <button class="biz-link" onclick="go('business','${c.biz}')">${esc(b.name)}</button>
+        </div>
+        <div class="biz-sub">${esc(b.cat)} · ${esc(b.loc)}</div>
+        <h3 class="headline">${esc(c.title)}</h3>
+        <p class="body-excerpt">${esc(c.body)}</p>
+      </div>
+      <div class="case-side">
+        <div class="sev">
+          <span class="sev-stars">${starRow(c.sev,15)}</span>
+          <span class="sev-num">&minus;${c.sev}</span>
+          <span class="sev-label">severity</span>
+        </div>
+        ${unheard?'<span class="stamp">Unheard</span>':""}
+      </div>
+    </div>
+    <div class="chips">
+      <span class="chip cat">${esc(b.cat)}</span>
+      <span class="status ${c.status}">${statusLabel(c.status)}</span>
+    </div>
+    ${c.reply?replyBlock(c.reply):""}
+    <div class="case-foot">
+      <span>Filed ${fmtDate(c.date)}</span><span class="dot"></span>
+      <span>${esc(c.author||"Registered submitter")}</span>
+      ${c.reply?'<span class="reply-flag">✓ Right of reply used</span>':'<span class="reply-flag" style="color:var(--amber)">Awaiting business response</span>'}
+    </div>
+  </article>`;
+}
+
+function replyBlock(r){
+  return `<div class="reply">
+    <div class="reply-head">↩ Response from ${esc(r.by)} · ${fmtDate(r.date)}</div>
+    <p class="reply-body">${esc(r.text)}</p>
+  </div>`;
+}
+
+function applyFilters(list,businesses){
+  let out=list.filter(c=>{
+    const b=businesses[c.biz]||{name:c.bizName||"",cat:"",loc:""};
+    if(filters.cat!=="all" && b.cat!==filters.cat) return false;
+    if(filters.status!=="all" && c.status!==filters.status) return false;
+    if(filters.q){
+      const hay=(b.name+" "+b.cat+" "+b.loc+" "+c.title+" "+c.body).toLowerCase();
+      if(!hay.includes(filters.q.toLowerCase())) return false;
+    }
+    return true;
+  });
+  if(filters.sort==="severe") out.sort((a,b)=>b.sev-a.sev || b.date.localeCompare(a.date));
+  else if(filters.sort==="business") out.sort((a,b)=>(businesses[a.biz]?.name||"").localeCompare(businesses[b.biz]?.name||""));
+  else out.sort((a,b)=>b.date.localeCompare(a.date));
+  return out;
+}
+
+function refreshFeed(){
+  const businesses=allBusinesses();
+  const list=applyFilters(allComplaints(),businesses);
+  const feed=document.getElementById("feed");
+  const rc=document.getElementById("rcount");
+  if(rc) rc.textContent=`${list.length} complaint${list.length===1?"":"s"}`;
+  if(!feed) return;
+  if(!list.length){ feed.innerHTML=`<div class="empty"><div class="big">Nothing here. Suspiciously quiet.</div><div>Either nobody's filed that yet, or your filters are too tight. Loosen them and look again.</div></div>`; return; }
+  feed.innerHTML=list.map(c=>caseCard(c,businesses)).join("");
+}
+
+function wireHome(){
+  const q=document.getElementById("q");
+  if(q){ q.oninput=e=>{filters.q=e.target.value; refreshFeed();}; }
+  const cat=document.getElementById("cat"); if(cat) cat.onchange=e=>{filters.cat=e.target.value; refreshFeed();};
+  const st=document.getElementById("status"); if(st) st.onchange=e=>{filters.status=e.target.value; refreshFeed();};
+  const so=document.getElementById("sort"); if(so) so.onchange=e=>{filters.sort=e.target.value; refreshFeed();};
+  refreshFeed();
+}
+
+/* ---------- Business dossier ---------- */
+function viewBusiness(slug){
+  const businesses=allBusinesses();
+  const b=businesses[slug];
+  if(!b) return `<main><div class="wrap"><div class="empty"><div class="big">Can't find that one — lucky them.</div><div>No complaints on file under that name.</div><button class="btn ghost sm" style="margin-top:16px" onclick="go('home')">← Back to the register</button></div></div></main>`;
+  const list=complaintsFor(slug).sort((a,b)=>b.date.localeCompare(a.date));
+  const avg=list.length? list.reduce((a,c)=>a+c.sev,0)/list.length : 0;
+  const unresolved=list.filter(c=>c.status!=="responded").length;
+  const ignored=list.filter(c=>c.status==="ignored").length;
+  const responded=list.filter(c=>c.reply).length;
+
+  return `<main><div class="wrap">
+    <button class="backlink" onclick="go('home')">← The register</button>
+    <div class="dossier">
+      <div class="dossier-top">
+        <div style="flex:1;min-width:240px">
+          <h2>${esc(b.name)}</h2>
+          <div class="biz-meta"><span>${esc(b.kind||"Business")}</span><span>·</span><span>${esc(b.cat)}</span><span>·</span><span>${esc(b.loc)}</span></div>
+          <p style="color:var(--ink-soft);margin:16px 0 0;max-width:56ch">Public complaints register for ${esc(b.name)}. This page aggregates every unresolved complaint filed against this business. There is no positive-review side — a low or empty count means fewer people have reported being let down here.</p>
+        </div>
+        <div class="dossier-score">
+          <div class="big">&minus;${avg.toFixed(1)}</div>
+          <div class="stars">${starRow(Math.round(avg),15)}</div>
+          <div class="lbl">Average severity</div>
+        </div>
+      </div>
+      <div class="dossier-stats">
+        <div class="dstat"><div class="n">${list.length}</div><div class="l">Complaints</div></div>
+        <div class="dstat"><div class="n bad">${unresolved}</div><div class="l">Unresolved</div></div>
+        <div class="dstat"><div class="n warn">${ignored}</div><div class="l">Ignored</div></div>
+        <div class="dstat"><div class="n good">${responded}</div><div class="l">Responses given</div></div>
+      </div>
+    </div>
+
+    <div class="section-rule"><h3>Complaints on record</h3><span class="line"></span></div>
+    <div class="feed">${list.map(c=>caseCard(c,businesses)).join("")}</div>
+
+    <div style="margin-top:26px;text-align:center">
+      <button class="btn accent" onclick="startComplaint('${slug}')">Been let down by ${esc(b.name)} too? Add yours</button>
+    </div>
+  </div></main>`;
+}
+
+/* ================= Account + submission flow ================= */
+function renderAccount(){
+  document.getElementById("markStars").innerHTML=markStars();
+  const slot=document.getElementById("acctSlot");
+  if(account){
+    const initial=(account.email||"?").trim()[0].toUpperCase();
+    slot.innerHTML=`<div class="acct"><span class="av">${initial}</span><span>${esc(account.email)}</span><button class="close-x" title="Sign out" style="font-size:16px" onclick="signOut()">⏻</button></div>`;
+  } else {
+    slot.innerHTML=`<button class="btn ghost sm" onclick="openAuth()">Sign in</button>`;
+  }
+  const tb=document.getElementById("themeBtn");
+  tb.innerHTML = isDark()?sunIcon():moonIcon();
+}
+function signOut(){ account=null; try{localStorage.removeItem(LS_USER)}catch(e){}; renderAccount(); toast("Signed out"); }
+
+function openModal(html){ document.getElementById("modalMount").innerHTML=html; document.getElementById("overlay").classList.add("open"); }
+function closeModal(){ document.getElementById("overlay").classList.remove("open"); document.getElementById("modalMount").innerHTML=""; }
+document.getElementById("overlay").addEventListener("click",e=>{ if(e.target.id==="overlay") closeModal(); });
+document.addEventListener("keydown",e=>{ if(e.key==="Escape") closeModal(); });
+
+function openAuth(afterSlug){
+  openModal(`
+    <div class="modal">
+      <div class="modal-head">
+        <div><h3>Create your free account</h3><p>Reading the register is always free and needs no account. A quick sign-in is required only to <em>file</em> a complaint — so you can track the business's response.</p></div>
+        <button class="close-x" onclick="closeModal()" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="field">
+          <label for="authEmail">Email address</label>
+          <input id="authEmail" type="email" placeholder="you@example.com" value="${account?escAttr(account.email):""}">
+          <span class="hint">Demo only — no email is sent and no password is used. Nothing leaves your browser.</span>
+        </div>
+        <div class="form-note">Requiring a free account (rather than anonymous posting) is a deliberate choice: it cuts spam, lets submitters track replies, and keeps a light record trail that lowers false-complaint risk.</div>
+      </div>
+      <div class="modal-foot">
+        <div class="spacer"></div>
+        <button class="btn ghost" onclick="closeModal()">Cancel</button>
+        <button class="btn accent" onclick="doAuth('${afterSlug||""}')">Let me in</button>
+      </div>
+    </div>`);
+  setTimeout(()=>{const el=document.getElementById("authEmail"); if(el) el.focus();},60);
+}
+function doAuth(afterSlug){
+  const email=(document.getElementById("authEmail").value||"").trim();
+  if(!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ toast("Need a real email before we let you in"); return; }
+  account={email}; saveUser(); renderAccount();
+  toast("You're in.");
+  openComplaintForm(afterSlug||"");
+}
+
+function startComplaint(slug){
+  if(!account){ openAuth(slug||""); return; }
+  openComplaintForm(slug||"");
+}
+
+function openComplaintForm(slug){
+  const businesses=allBusinesses();
+  const preset=slug&&businesses[slug]?businesses[slug].name:"";
+  const presetCat=slug&&businesses[slug]?businesses[slug].cat:"";
+  openModal(`
+    <div class="modal">
+      <div class="modal-head">
+        <div><h3>File a complaint</h3><p>Put an unresolved issue on the public record. Be factual and first-hand — the business gets a right of reply.</p></div>
+        <button class="close-x" onclick="closeModal()" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="field">
+          <label for="fBiz">Business / tradesperson</label>
+          <input id="fBiz" type="text" placeholder="e.g. Brightpath Builders" value="${escAttr(preset)}">
+        </div>
+        <div class="field row2">
+          <div class="field" style="gap:6px">
+            <label for="fCat">Category</label>
+            <select id="fCat">${CATEGORIES.map(c=>`<option ${c===presetCat?"selected":""}>${c}</option>`).join("")}</select>
+          </div>
+          <div class="field" style="gap:6px">
+            <label for="fLoc">Location</label>
+            <input id="fLoc" type="text" placeholder="Town / region">
+          </div>
+        </div>
+        <div class="field">
+          <label>Severity <span class="hint">— how bad, on the zero-to-&minus;5 scale</span></label>
+          <div class="sev-pick" id="sevPick">
+            ${[1,2,3,4,5].map(n=>`<button type="button" data-sev="${n}" aria-pressed="${n===3?"true":"false"}"><span class="sn">&minus;${n}</span><span class="sl">${["minor","poor","serious","severe","egregious"][n-1]}</span></button>`).join("")}
+          </div>
+        </div>
+        <div class="field">
+          <label for="fTitle">Headline</label>
+          <input id="fTitle" type="text" placeholder="One line: what went wrong and how it was handled">
+        </div>
+        <div class="field">
+          <label for="fBody">What happened</label>
+          <textarea id="fBody" placeholder="Facts, dates, amounts. What you asked for and how the business responded (or didn't)."></textarea>
+        </div>
+        <div class="form-note">By filing you confirm this is a truthful, first-hand account. The business can respond publicly or ask moderators to review a disputed entry.</div>
+      </div>
+      <div class="modal-foot">
+        <span class="signed-as">Filing as ${account?esc(account.email):"—"}</span>
+        <div class="spacer"></div>
+        <button class="btn ghost" onclick="closeModal()">Cancel</button>
+        <button class="btn accent" onclick="submitComplaint()">Put it on the record</button>
+      </div>
+    </div>`);
+  let sev=3;
+  const pick=document.getElementById("sevPick");
+  pick.addEventListener("click",e=>{
+    const btn=e.target.closest("button[data-sev]"); if(!btn) return;
+    sev=+btn.dataset.sev;
+    pick.querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed", b===btn?"true":"false"));
+  });
+  pick._getSev=()=>sev;
+  window.__sevPick=pick;
+  setTimeout(()=>{const el=document.getElementById("fBiz"); if(el&&!el.value) el.focus(); else {const t=document.getElementById("fTitle"); if(t) t.focus();}},60);
+}
+
+function slugify(s){ return s.toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,""); }
+
+function submitComplaint(){
+  const bizName=(document.getElementById("fBiz").value||"").trim();
+  const cat=document.getElementById("fCat").value;
+  const loc=(document.getElementById("fLoc").value||"").trim()||"—";
+  const title=(document.getElementById("fTitle").value||"").trim();
+  const body=(document.getElementById("fBody").value||"").trim();
+  const sev=window.__sevPick?window.__sevPick._getSev():3;
+  if(!bizName){ toast("Who let you down? Name them."); return; }
+  if(!title){ toast("Give it a headline — one blunt line."); return; }
+  if(body.length<20){ toast("Tell us what actually happened."); return; }
+  const slug=slugify(bizName);
+  const n=userSubs.length+SEED_COMPLAINTS.length+1;
+  const c={
+    id:"ZS-"+String(1043+userSubs.length),
+    biz:slug, bizName:bizName, cat:cat, loc:loc,
+    sev:sev, status:"unresolved",
+    author:account?account.email.split("@")[0]:"Registered submitter",
+    date:new Date().toISOString().slice(0,10),
+    title:title, body:body, reply:null
+  };
+  userSubs.unshift(c); saveSubs();
+  closeModal();
+  toast("On the record. They can't say they weren't told.",true);
+  filters.q=""; filters.cat="all"; filters.status="all"; filters.sort="recent";
+  go("business",slug);
+}
+
+/* ================= Theme ================= */
+function isDark(){
+  const attr=document.documentElement.getAttribute("data-theme");
+  if(attr) return attr==="dark";
+  return window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+function toggleTheme(){
+  document.documentElement.setAttribute("data-theme", isDark()?"light":"dark");
+  renderAccount();
+}
+document.getElementById("themeBtn").addEventListener("click",toggleTheme);
+function moonIcon(){return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>`;}
+function sunIcon(){return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M19.1 4.9l-1.8 1.8M6.7 17.3l-1.8 1.8"/></svg>`;}
+
+/* ================= Toast + helpers ================= */
+let toastT;
+function toast(msg,star){
+  const t=document.getElementById("toast");
+  t.innerHTML=(star?'<span class="t-star">'+starSVG(true,15)+'</span>':"")+msg;
+  t.classList.add("show");
+  clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove("show"),2600);
+}
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
+function escAttr(s){ return esc(s); }
+function fmtDate(iso){
+  try{const d=new Date(iso+"T00:00:00"); return d.toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"});}catch(e){return iso;}
+}
+
+/* ================= Boot ================= */
+render();
+</script>
