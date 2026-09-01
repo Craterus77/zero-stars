@@ -202,8 +202,11 @@ app.get("/api/businesses/:slug", (req, res) => {
   });
 });
 
+/* ---------- health check (for Railway / uptime probes) ---------- */
+app.get("/healthz", (req, res) => res.json({ ok: true, ts: Date.now() }));
+
 /* ---------- static front end ---------- */
 app.use(express.static(path.join(__dirname, "public"), { extensions: ["html"] }));
 app.get("*", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
 
-app.listen(PORT, () => console.log(`Zero Stars running at http://localhost:${PORT}`));
+app.listen(PORT, "0.0.0.0", () => console.log(`Zero Stars running on port ${PORT}`));

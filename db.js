@@ -4,7 +4,12 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DB_PATH = path.join(__dirname, "zerostars.db");
+// DB location is configurable so a Railway (or any host) persistent volume can
+// hold the data: set DB_PATH to a full path, or DATA_DIR to a mounted directory.
+// Falls back to the app folder for local dev.
+const DB_PATH = process.env.DB_PATH
+  ? process.env.DB_PATH
+  : path.join(process.env.DATA_DIR || __dirname, "zerostars.db");
 
 export const db = new DatabaseSync(DB_PATH);
 db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");

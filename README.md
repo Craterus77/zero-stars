@@ -49,3 +49,28 @@ The database (`zerostars.db`) and seed data are created automatically on first s
 - No email is actually sent; there is no password reset flow yet.
 - To make it shareable/deployable, swap `node:sqlite` for hosted Postgres (e.g. Supabase) and
   put it behind HTTPS; the API surface stays the same.
+
+## Deploy to Railway
+
+The repo is prepped for Railway (Nixpacks). Config lives in `railway.json`,
+Node is pinned to 24 (`engines` + `.nvmrc`), the server binds `0.0.0.0` and
+respects `PORT`, and there's a `/healthz` endpoint for the health check.
+
+**Steps**
+1. Push this repo to GitHub.
+2. On [railway.app](https://railway.app): **New Project → Deploy from GitHub repo →** pick `zero-stars`.
+3. Railway auto-detects Node 24, runs `npm install`, then `npm start`. It assigns a
+   public URL under **Settings → Networking → Generate Domain**.
+
+**Make the data persist (optional but recommended)**
+By default the SQLite file lives on the container's ephemeral disk, so it resets to
+seed data on every redeploy/restart. To keep data:
+1. Add a **Volume** to the service (e.g. mounted at `/data`).
+2. Set an env var so the DB is written there:
+   - `DATA_DIR=/data`  (or `DB_PATH=/data/zerostars.db`)
+
+`db.js` reads `DB_PATH` / `DATA_DIR` and falls back to the app folder locally.
+
+**Note on scale:** `node:sqlite` is single-writer and file-based — perfect for a
+prototype and light testing. For real traffic or multiple instances, move to hosted
+Postgres; the API surface stays the same.

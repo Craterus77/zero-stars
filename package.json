@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "description": "Zero Stars — complaints-only public register (full-stack prototype)",
+  "engines": {
+    "node": "24.x"
+  },
   "scripts": {
     "start": "node --no-warnings server.js",
     "seed": "node --no-warnings db.js --reseed"
