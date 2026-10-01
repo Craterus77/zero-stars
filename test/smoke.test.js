@@ -110,3 +110,68 @@ test("register → file complaint → appears on business dossier", async () => 
   assert.ok(dossier.complaints.some(c => c.id === publicId));
   assert.equal(dossier.stats.total, 1);
 });
+
+/* ---------- moderation / disputes ---------- */
+function cookieOf(res) {
+  return (res.headers.getSetCookie?.() || []).map(c => c.split(";")[0]).join("; ");
+}
+async function login(email, password) {
+  const r = await fetch(`${BASE}/api/auth/login`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password })
+  });
+  return { res: r, body: await r.json(), cookie: cookieOf(r) };
+}
+
+test("seeded moderator can read the queue; non-moderators cannot", async () => {
+  const mod = await login("moderator@zerostars.test", "zerostars-mod");
+  assert.equal(mod.res.status, 200);
+  assert.equal(mod.body.user.isModerator, true);
+
+  const q = await fetch(`${BASE}/api/moderation/queue`, { headers: { Cookie: mod.cookie } });
+  assert.equal(q.status, 200);
+  const { counts } = await q.json();
+  assert.ok(counts.open >= 1, "expected the seeded open dispute");
+
+  // a plain registered user is forbidden
+  const reg = await fetch(`${BASE}/api/auth/register`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "nonmod@zerostars.test", password: "nonmod-123" })
+  });
+  const forbidden = await fetch(`${BASE}/api/moderation/queue`, { headers: { Cookie: cookieOf(reg) } });
+  assert.equal(forbidden.status, 403);
+});
+
+test("dispute → moderator remove hides the complaint from public view", async () => {
+  // a user disputes an existing seed complaint
+  const user = await fetch(`${BASE}/api/auth/register`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "disputer@zerostars.test", password: "disp-1234" })
+  });
+  const userCookie = cookieOf(user);
+  const disp = await fetch(`${BASE}/api/complaints/ZS-0912/dispute`, {
+    method: "POST", headers: { "Content-Type": "application/json", Cookie: userCookie },
+    body: JSON.stringify({ reason: "Factually inaccurate", detail: "We have documentary proof the clause was disclosed." })
+  });
+  assert.equal(disp.status, 200);
+
+  // it now shows as disputed publicly
+  let list = await (await fetch(`${BASE}/api/complaints`)).json();
+  const disputed = list.complaints.find(c => c.id === "ZS-0912");
+  assert.equal(disputed.modState, "disputed");
+
+  // moderator finds that dispute and removes the complaint
+  const mod = await login("moderator@zerostars.test", "zerostars-mod");
+  const queue = await (await fetch(`${BASE}/api/moderation/queue`, { headers: { Cookie: mod.cookie } })).json();
+  const target = queue.disputes.find(d => d.complaintId === "ZS-0912");
+  assert.ok(target, "dispute should be in the open queue");
+  const resolve = await fetch(`${BASE}/api/moderation/disputes/${target.disputeId}/resolve`, {
+    method: "POST", headers: { "Content-Type": "application/json", Cookie: mod.cookie },
+    body: JSON.stringify({ action: "remove", note: "Removed pending evidence." })
+  });
+  assert.equal(resolve.status, 200);
+
+  // gone from public listing
+  list = await (await fetch(`${BASE}/api/complaints`)).json();
+  assert.ok(!list.complaints.some(c => c.id === "ZS-0912"), "removed complaint must not be public");
+});

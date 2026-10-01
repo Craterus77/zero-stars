@@ -1,6 +1,7 @@
 /* Zero Stars — front end (talks to the Express + SQLite API) */
 
 const CATEGORIES = ["Trades & Construction","Retail","Warranty & Insurance","Customer Service","Professional Services","Other"];
+let DISPUTE_REASONS = ["Factually inaccurate","Already resolved","Not a genuine customer","Abusive or defamatory","Duplicate or spam","Other"];
 let account = null;
 const filters = { q:"", cat:"all", status:"all", sort:"recent" };
 let currentView = { name:"home" };
@@ -46,6 +47,9 @@ async function render(){
     }catch(e){
       app.innerHTML=`<main><div class="wrap"><div class="empty"><div class="big">Can't find that one — lucky them.</div><div>${esc(e.message)}</div><button class="btn ghost sm" style="margin-top:16px" onclick="go('home')">← Back to the register</button></div></div></main>`;
     }
+  } else if(currentView.name==="moderation"){
+    app.innerHTML=`<div class="loading">Loading the moderation queue…</div>`;
+    await renderModeration(currentView.arg||"open");
   } else {
     app.innerHTML=await viewHome();
     wireHome();
@@ -55,7 +59,7 @@ async function render(){
 /* ---------- home ---------- */
 async function viewHome(){
   let meta={total:0,unresolved:0,avgSeverity:0,businesses:0};
-  try{ meta=await api("/api/meta"); }catch(e){}
+  try{ meta=await api("/api/meta"); if(Array.isArray(meta.disputeReasons)) DISPUTE_REASONS=meta.disputeReasons; }catch(e){}
   return `
   <section class="hero">
     <div class="wrap hero-grid">
@@ -126,9 +130,10 @@ function caseCard(c,opts={}){
     <div class="chips">
       <span class="chip cat">${esc(c.cat)}</span>
       <span class="status ${c.status}">${statusLabel(c.status)}</span>
+      ${c.modState==="disputed" ? `<span class="status disputed" title="${escAttr(c.disputeReason||"Disputed")}">⚖ Disputed — under review</span>` : ""}
     </div>
     ${c.reply?replyBlock(c.reply):""}
-    ${opts.showRespond && !c.reply ? `<div class="respond-cta"><button onclick="openReply('${c.id}')">↩ Respond as the business (right of reply)</button></div>` : ""}
+    ${cardActions(c,opts)}
     <div class="case-foot">
       <span>Filed ${fmtDate(c.date)}</span><span class="dot"></span>
       <span>${esc(c.author||"Registered submitter")}</span>
@@ -138,6 +143,17 @@ function caseCard(c,opts={}){
 }
 function replyBlock(r){
   return `<div class="reply"><div class="reply-head">↩ Response from ${esc(r.by)} · ${fmtDate(r.date)}</div><p class="reply-body">${esc(r.text)}</p></div>`;
+}
+function cardActions(c,opts={}){
+  const buttons=[];
+  if(opts.showRespond && !c.reply && c.modState!=="removed")
+    buttons.push(`<button class="act respond" onclick="openReply('${c.id}')">↩ Respond as the business</button>`);
+  if(account && c.modState==="published")
+    buttons.push(`<button class="act dispute" onclick="openDispute('${c.id}')">⚖ Dispute this complaint</button>`);
+  if(c.modState==="disputed")
+    buttons.push(`<span class="act muted">⚖ Under review — a moderator will decide</span>`);
+  if(!buttons.length) return "";
+  return `<div class="card-actions">${buttons.join("")}</div>`;
 }
 
 async function refreshFeed(){
@@ -201,11 +217,22 @@ function renderChrome(){
   const slot=document.getElementById("acctSlot");
   if(account){
     const initial=(account.email||"?").trim()[0].toUpperCase();
-    slot.innerHTML=`<div class="acct"><span class="av">${initial}</span><span>${esc(account.email)}</span><button class="close-x" title="Sign out" style="font-size:16px" onclick="signOut()">⏻</button></div>`;
+    const modBtn = account.isModerator
+      ? `<button class="btn ghost sm" onclick="go('moderation')" title="Moderation queue">⚖ Moderation<span id="modBadge" class="mod-badge" hidden></span></button>`
+      : "";
+    slot.innerHTML = modBtn + `<div class="acct"><span class="av">${initial}</span><span>${esc(account.email)}</span><button class="close-x" title="Sign out" style="font-size:16px" onclick="signOut()">⏻</button></div>`;
+    if(account.isModerator) refreshModBadge();
   } else {
     slot.innerHTML=`<button class="btn ghost sm" onclick="openAuth()">Sign in</button>`;
   }
   document.getElementById("themeBtn").innerHTML = isDark()?sunIcon():moonIcon();
+}
+async function refreshModBadge(){
+  try{
+    const {counts}=await api("/api/moderation/queue");
+    const el=document.getElementById("modBadge");
+    if(el){ if(counts.open>0){ el.textContent=counts.open; el.hidden=false; } else { el.hidden=true; } }
+  }catch(e){}
 }
 
 /* ---------- modal plumbing ---------- */
@@ -399,6 +426,105 @@ async function submitReply(publicId){
   }catch(e){ showErr("rErr",e.message); btn.disabled=false; }
 }
 
+/* ---------- dispute a complaint ---------- */
+function openDispute(publicId){
+  if(!account){ openAuth(); return; }
+  openModal(`
+    <div class="modal">
+      <div class="modal-head">
+        <div><h3>Dispute this complaint</h3><p>Challenge complaint <strong>${esc(publicId)}</strong>. It gets flagged <em>under review</em> and goes to a moderator, who decides whether it stays, is removed, or is marked resolved.</p></div>
+        <button class="close-x" onclick="closeModal()" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-err" id="dErr"></div>
+        <div class="field">
+          <label for="dReason">Grounds for dispute</label>
+          <select id="dReason">${DISPUTE_REASONS.map(r=>`<option>${esc(r)}</option>`).join("")}</select>
+        </div>
+        <div class="field">
+          <label for="dDetail">Explain</label>
+          <textarea id="dDetail" placeholder="Set out why this complaint is inaccurate, resolved, or otherwise shouldn't stand. Evidence helps a moderator decide."></textarea>
+        </div>
+        <div class="form-note">Raising a dispute doesn't delete the complaint — a moderator reviews both sides. Abusing the dispute process can itself be actioned.</div>
+      </div>
+      <div class="modal-foot">
+        <div class="spacer"></div>
+        <button class="btn ghost" onclick="closeModal()">Cancel</button>
+        <button class="btn accent" id="dSubmit" onclick="submitDispute('${esc(publicId)}')">Submit for review</button>
+      </div>
+    </div>`);
+  setTimeout(()=>{const el=document.getElementById("dDetail"); if(el) el.focus();},60);
+}
+async function submitDispute(publicId){
+  hideErr("dErr");
+  const reason=document.getElementById("dReason").value;
+  const detail=(document.getElementById("dDetail").value||"").trim();
+  const btn=document.getElementById("dSubmit"); btn.disabled=true;
+  try{
+    await api("/api/complaints/"+encodeURIComponent(publicId)+"/dispute",{method:"POST",body:{reason,detail}});
+    closeModal(); toast("Flagged for review. A moderator will decide.");
+    render();
+  }catch(e){ showErr("dErr",e.message); btn.disabled=false; }
+}
+
+/* ---------- moderation queue (moderators only) ---------- */
+async function renderModeration(state){
+  const app=document.getElementById("app");
+  let data;
+  try{ data=await api("/api/moderation/queue?state="+encodeURIComponent(state)); }
+  catch(e){ app.innerHTML=`<main><div class="wrap"><div class="empty"><div class="big">Moderation unavailable.</div><div>${esc(e.message)}</div><button class="btn ghost sm" style="margin-top:16px" onclick="go('home')">← Back to the register</button></div></div></main>`; return; }
+  const {disputes, counts}=data;
+  const tab=(s,label)=>`<button class="mod-tab ${state===s?"active":""}" onclick="go('moderation','${s}')">${label} <span class="mod-tab-n">${counts[s]}</span></button>`;
+  app.innerHTML=`<main><div class="wrap">
+    <button class="backlink" onclick="go('home')">← The register</button>
+    <div class="mod-head">
+      <h2>Moderation queue</h2>
+      <p><strong>Keep</strong> rejects the dispute and the complaint stays public · <strong>Remove</strong> hides it from the register · <strong>Resolve</strong> keeps it but marks it answered. Every decision is logged.</p>
+    </div>
+    <div class="mod-tabs">${tab("open","Open")}${tab("upheld","Upheld")}${tab("rejected","Rejected")}</div>
+    <div class="feed">${disputes.length ? disputes.map(moderationCard).join("") : `<div class="empty"><div class="big">Nothing in this lane.</div><div>No ${esc(state)} disputes right now.</div></div>`}</div>
+  </div></main>`;
+}
+function moderationCard(d){
+  const open = d.state==="open";
+  return `<article class="case mod-case">
+    <div class="case-top">
+      <div class="case-main">
+        <div class="case-meta"><span class="caseid">${esc(d.complaintId)}</span><button class="biz-link" onclick="go('business','${d.biz}')">${esc(d.bizName)}</button></div>
+        <div class="biz-sub">${esc(d.cat)} · ${esc(d.loc)}</div>
+        <h3 class="headline">${esc(d.title)}</h3>
+        <p class="body-excerpt">${esc(d.body)}</p>
+      </div>
+      <div class="case-side">
+        <div class="sev"><span class="sev-stars">${starRow(d.sev,15)}</span><span class="sev-num">&minus;${d.sev}</span><span class="sev-label">severity</span></div>
+      </div>
+    </div>
+    <div class="dispute-block">
+      <div class="dispute-head">⚖ Dispute — ${esc(d.reason)} <span class="dispute-by">raised ${fmtDate(d.raisedAt)}${d.raisedByEmail?` · ${esc(d.raisedByEmail)}`:" · business"}</span></div>
+      <p class="dispute-detail">${esc(d.detail)}</p>
+    </div>
+    ${open ? `
+    <div class="mod-actions">
+      <input id="note-${d.disputeId}" class="mod-note" type="text" placeholder="Moderator note (optional, logged)">
+      <div class="mod-btns">
+        <button class="btn ghost sm" onclick="resolveDispute(${d.disputeId},'keep')">Keep complaint</button>
+        <button class="btn ghost sm" onclick="resolveDispute(${d.disputeId},'resolve')">Mark resolved</button>
+        <button class="btn accent sm" onclick="resolveDispute(${d.disputeId},'remove')">Remove complaint</button>
+      </div>
+    </div>` : `
+    <div class="case-foot"><span>Decision: <strong>${esc(d.resolution||d.state)}</strong></span>${d.moderatorEmail?`<span class="dot"></span><span>${esc(d.moderatorEmail)}</span>`:""}${d.resolvedAt?`<span class="dot"></span><span>${fmtDate(d.resolvedAt)}</span>`:""}${d.moderatorNote?`<span class="dot"></span><span>“${esc(d.moderatorNote)}”</span>`:""}</div>`}
+  </article>`;
+}
+async function resolveDispute(id,action){
+  const note=(document.getElementById("note-"+id)?.value||"").trim();
+  try{
+    await api("/api/moderation/disputes/"+id+"/resolve",{method:"POST",body:{action,note}});
+    toast(action==="remove"?"Complaint removed from the register." : action==="resolve"?"Kept and marked resolved." : "Dispute rejected — complaint stands.");
+    renderModeration(currentView.arg||"open");
+    refreshModBadge();
+  }catch(e){ toast(e.message); }
+}
+
 /* ---------- theme ---------- */
 function isDark(){
   const attr=document.documentElement.getAttribute("data-theme");
@@ -421,5 +547,6 @@ function toast(msg,star){
 /* ---------- boot ---------- */
 (async function(){
   try{ const me=await api("/api/auth/me"); account=me.user; }catch(e){}
+  try{ const meta=await api("/api/meta"); if(Array.isArray(meta.disputeReasons)) DISPUTE_REASONS=meta.disputeReasons; }catch(e){}
   render();
 })();

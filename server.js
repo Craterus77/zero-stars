@@ -3,10 +3,18 @@ import express from "express";
 import crypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { db, seed, CATEGORIES } from "./db.js";
+import { db, seed, CATEGORIES, DISPUTE_REASONS } from "./db.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 4317;
+
+// Extra emails to grant moderator rights (comma-separated), e.g. MOD_EMAILS="you@x.com".
+const MOD_EMAILS = new Set(
+  (process.env.MOD_EMAILS || "").split(",").map(s => s.trim().toLowerCase()).filter(Boolean)
+);
+function applyModPromotion(email, userId) {
+  if (MOD_EMAILS.has(email)) db.prepare("UPDATE users SET is_moderator = 1 WHERE id = ?").run(userId);
+}
 
 seed(); // migrate + seed on first run
 
@@ -44,7 +52,7 @@ function currentUser(req) {
   const token = parseCookies(req).zs_session;
   if (!token) return null;
   const row = db.prepare(
-    "SELECT u.id, u.email FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?"
+    "SELECT u.id, u.email, u.is_moderator FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?"
   ).get(token);
   return row || null;
 }
@@ -54,12 +62,22 @@ function requireAuth(req, res, next) {
   req.user = u;
   next();
 }
+function requireModerator(req, res, next) {
+  const u = currentUser(req);
+  if (!u) return res.status(401).json({ error: "Sign in to do that." });
+  if (!u.is_moderator) return res.status(403).json({ error: "Moderators only." });
+  req.user = u;
+  next();
+}
 
 /* ---------- serialization ---------- */
 function shapeComplaint(row) {
   const replies = db.prepare(
     "SELECT author_name AS by, body AS text, created_at AS date FROM replies WHERE complaint_id = ? ORDER BY created_at ASC"
   ).all(row.id);
+  const openDispute = db.prepare(
+    "SELECT reason FROM disputes WHERE complaint_id = ? AND state = 'open' ORDER BY created_at DESC LIMIT 1"
+  ).get(row.id);
   return {
     id: row.public_id,
     biz: row.slug,
@@ -68,6 +86,8 @@ function shapeComplaint(row) {
     loc: row.loc,
     sev: row.severity,
     status: row.status,
+    modState: row.mod_state || "published",
+    disputeReason: openDispute ? openDispute.reason : null,
     title: row.title,
     body: row.body,
     author: row.author_label,
@@ -82,11 +102,12 @@ const COMPLAINT_SELECT = `
 
 /* ---------- API: meta ---------- */
 app.get("/api/meta", (req, res) => {
-  const total = db.prepare("SELECT COUNT(*) n FROM complaints").get().n;
-  const unresolved = db.prepare("SELECT COUNT(*) n FROM complaints WHERE status != 'responded'").get().n;
-  const avg = db.prepare("SELECT AVG(severity) a FROM complaints").get().a || 0;
+  // Public stats exclude moderator-removed complaints.
+  const total = db.prepare("SELECT COUNT(*) n FROM complaints WHERE mod_state != 'removed'").get().n;
+  const unresolved = db.prepare("SELECT COUNT(*) n FROM complaints WHERE mod_state != 'removed' AND status != 'responded'").get().n;
+  const avg = db.prepare("SELECT AVG(severity) a FROM complaints WHERE mod_state != 'removed'").get().a || 0;
   const businesses = db.prepare("SELECT COUNT(*) n FROM businesses").get().n;
-  res.json({ categories: CATEGORIES, total, unresolved, avgSeverity: avg, businesses });
+  res.json({ categories: CATEGORIES, disputeReasons: DISPUTE_REASONS, total, unresolved, avgSeverity: avg, businesses });
 });
 
 /* ---------- API: auth ---------- */
@@ -99,10 +120,12 @@ app.post("/api/auth/register", (req, res) => {
   if (exists) return res.status(409).json({ error: "That email already has an account — sign in instead." });
   const { hash, salt } = hashPassword(password);
   const r = db.prepare("INSERT INTO users (email, pass_hash, pass_salt) VALUES (?,?,?)").run(email, hash, salt);
+  applyModPromotion(email, r.lastInsertRowid);
   const token = crypto.randomBytes(24).toString("hex");
   db.prepare("INSERT INTO sessions (token, user_id) VALUES (?,?)").run(token, r.lastInsertRowid);
   setSessionCookie(res, token);
-  res.json({ user: { email } });
+  const isMod = !!db.prepare("SELECT is_moderator FROM users WHERE id = ?").get(r.lastInsertRowid).is_moderator;
+  res.json({ user: { email, isModerator: isMod } });
 });
 app.post("/api/auth/login", (req, res) => {
   const email = String(req.body.email || "").trim().toLowerCase();
@@ -110,10 +133,12 @@ app.post("/api/auth/login", (req, res) => {
   const u = db.prepare("SELECT * FROM users WHERE email = ?").get(email);
   if (!u || !verifyPassword(password, u.pass_salt, u.pass_hash))
     return res.status(401).json({ error: "Wrong email or password." });
+  applyModPromotion(email, u.id);
   const token = crypto.randomBytes(24).toString("hex");
   db.prepare("INSERT INTO sessions (token, user_id) VALUES (?,?)").run(token, u.id);
   setSessionCookie(res, token);
-  res.json({ user: { email: u.email } });
+  const isMod = !!db.prepare("SELECT is_moderator FROM users WHERE id = ?").get(u.id).is_moderator;
+  res.json({ user: { email: u.email, isModerator: isMod } });
 });
 app.post("/api/auth/logout", (req, res) => {
   const token = parseCookies(req).zs_session;
@@ -123,13 +148,14 @@ app.post("/api/auth/logout", (req, res) => {
 });
 app.get("/api/auth/me", (req, res) => {
   const u = currentUser(req);
-  res.json({ user: u ? { email: u.email } : null });
+  res.json({ user: u ? { email: u.email, isModerator: !!u.is_moderator } : null });
 });
 
 /* ---------- API: complaints ---------- */
 app.get("/api/complaints", (req, res) => {
   const { q = "", cat = "all", status = "all", sort = "recent" } = req.query;
-  let rows = db.prepare(COMPLAINT_SELECT).all().map(shapeComplaint);
+  // Public listing hides moderator-removed complaints.
+  let rows = db.prepare(COMPLAINT_SELECT + " WHERE c.mod_state != 'removed'").all().map(shapeComplaint);
   if (cat !== "all") rows = rows.filter(c => c.cat === cat);
   if (status !== "all") rows = rows.filter(c => c.status === status);
   if (q) {
@@ -181,11 +207,82 @@ app.post("/api/complaints/:publicId/reply", requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+/* ---------- API: dispute a complaint (business challenge → moderation) ---------- */
+app.post("/api/complaints/:publicId/dispute", requireAuth, (req, res) => {
+  const c = db.prepare("SELECT * FROM complaints WHERE public_id = ?").get(req.params.publicId);
+  if (!c) return res.status(404).json({ error: "No such complaint." });
+  if (c.mod_state === "removed") return res.status(409).json({ error: "This complaint has already been removed." });
+  const reason = DISPUTE_REASONS.includes(req.body.reason) ? req.body.reason : null;
+  const detail = String(req.body.detail || "").trim();
+  if (!reason) return res.status(400).json({ error: "Pick a reason for the dispute." });
+  if (detail.length < 15) return res.status(400).json({ error: "Explain the dispute in a sentence or two." });
+  const openOne = db.prepare("SELECT id FROM disputes WHERE complaint_id = ? AND state = 'open'").get(c.id);
+  if (openOne) return res.status(409).json({ error: "This complaint is already under review." });
+  db.prepare("INSERT INTO disputes (complaint_id, raised_by, reason, detail) VALUES (?,?,?,?)")
+    .run(c.id, req.user.id, reason, detail);
+  db.prepare("UPDATE complaints SET mod_state = 'disputed' WHERE id = ?").run(c.id);
+  res.json({ ok: true });
+});
+
+/* ---------- API: moderation (moderators only) ---------- */
+app.get("/api/moderation/queue", requireModerator, (req, res) => {
+  const stateFilter = ["open", "upheld", "rejected"].includes(req.query.state) ? req.query.state : "open";
+  const rows = db.prepare(`
+    SELECT d.id AS disputeId, d.reason, d.detail, d.state, d.resolution, d.moderator_note AS moderatorNote,
+           d.created_at AS raisedAt, d.resolved_at AS resolvedAt,
+           ru.email AS raisedByEmail, mu.email AS moderatorEmail,
+           c.public_id AS complaintId, c.title, c.body, c.severity AS sev, c.status, c.mod_state AS modState,
+           c.author_label AS author, c.created_at AS complaintDate,
+           b.slug AS biz, b.name AS bizName, b.cat, b.loc
+    FROM disputes d
+    JOIN complaints c ON c.id = d.complaint_id
+    JOIN businesses b ON b.id = c.business_id
+    LEFT JOIN users ru ON ru.id = d.raised_by
+    LEFT JOIN users mu ON mu.id = d.moderator_id
+    WHERE d.state = ?
+    ORDER BY d.created_at ASC
+  `).all(stateFilter).map(r => ({
+    ...r,
+    complaintDate: (r.complaintDate || "").slice(0, 10),
+    raisedAt: (r.raisedAt || "").slice(0, 10),
+    resolvedAt: r.resolvedAt ? r.resolvedAt.slice(0, 10) : null
+  }));
+  const counts = {
+    open: db.prepare("SELECT COUNT(*) n FROM disputes WHERE state='open'").get().n,
+    upheld: db.prepare("SELECT COUNT(*) n FROM disputes WHERE state='upheld'").get().n,
+    rejected: db.prepare("SELECT COUNT(*) n FROM disputes WHERE state='rejected'").get().n
+  };
+  res.json({ disputes: rows, counts });
+});
+
+app.post("/api/moderation/disputes/:id/resolve", requireModerator, (req, res) => {
+  const d = db.prepare("SELECT * FROM disputes WHERE id = ?").get(req.params.id);
+  if (!d) return res.status(404).json({ error: "No such dispute." });
+  if (d.state !== "open") return res.status(409).json({ error: "This dispute is already resolved." });
+  // action: keep (reject dispute, complaint stays), remove (hide complaint), resolve (mark complaint responded/resolved)
+  const action = ["keep", "remove", "resolve"].includes(req.body.action) ? req.body.action : null;
+  const note = String(req.body.note || "").trim();
+  if (!action) return res.status(400).json({ error: "Choose keep, remove, or resolve." });
+
+  const newDisputeState = action === "keep" ? "rejected" : "upheld";
+  let newModState = "published";
+  if (action === "remove") newModState = "removed";
+
+  db.prepare(`UPDATE disputes
+    SET state = ?, resolution = ?, moderator_id = ?, moderator_note = ?, resolved_at = datetime('now')
+    WHERE id = ?`).run(newDisputeState, action, req.user.id, note, d.id);
+  db.prepare("UPDATE complaints SET mod_state = ? WHERE id = ?").run(newModState, d.complaint_id);
+  if (action === "resolve") db.prepare("UPDATE complaints SET status = 'responded' WHERE id = ?").run(d.complaint_id);
+  db.prepare("INSERT INTO moderation_log (dispute_id, complaint_id, moderator_id, action, note) VALUES (?,?,?,?,?)")
+    .run(d.id, d.complaint_id, req.user.id, action, note);
+  res.json({ ok: true, action });
+});
+
 /* ---------- API: business dossier ---------- */
 app.get("/api/businesses/:slug", (req, res) => {
   const b = db.prepare("SELECT * FROM businesses WHERE slug = ?").get(req.params.slug);
   if (!b) return res.status(404).json({ error: "Business not found." });
-  const rows = db.prepare(COMPLAINT_SELECT + " WHERE b.slug = ?").all(req.params.slug)
+  const rows = db.prepare(COMPLAINT_SELECT + " WHERE b.slug = ? AND c.mod_state != 'removed'").all(req.params.slug)
     .map(shapeComplaint)
     .sort((a, z) => z.date.localeCompare(a.date) || z.id.localeCompare(a.id));
   const avg = rows.length ? rows.reduce((s, c) => s + c.sev, 0) / rows.length : 0;

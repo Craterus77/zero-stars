@@ -74,3 +74,34 @@ seed data on every redeploy/restart. To keep data:
 **Note on scale:** `node:sqlite` is single-writer and file-based — perfect for a
 prototype and light testing. For real traffic or multiple instances, move to hosted
 Postgres; the API surface stays the same.
+
+## Moderation & disputes
+
+Businesses can challenge a complaint, and moderators adjudicate — the safeguard against
+false or defamatory entries.
+
+**Flow**
+1. Any signed-in user clicks **Dispute this complaint**, picks a ground (factually inaccurate,
+   already resolved, not a genuine customer, abusive/defamatory, duplicate/spam, other) and
+   explains. The complaint is flagged **Disputed — under review** publicly and queued.
+2. A **moderator** opens the **Moderation queue** (nav button with an open-count badge) and, per
+   dispute, chooses:
+   - **Keep** — rejects the dispute; the complaint stays public.
+   - **Remove** — hides the complaint from the register (soft delete; row and audit trail kept).
+   - **Resolve** — keeps it but marks it answered.
+   Every decision is written to `moderation_log` with the moderator and an optional note.
+
+**Being a moderator**
+- A demo moderator is seeded: **`moderator@zerostars.test` / `zerostars-mod`** (local prototype
+  credentials — change before any real use).
+- Promote real accounts by setting `MOD_EMAILS` (comma-separated) and signing in, e.g.
+  `MOD_EMAILS="you@example.com"`.
+
+**API**
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| POST | `/api/complaints/:publicId/dispute` | user | Raise a dispute (flags complaint) |
+| GET  | `/api/moderation/queue?state=open\|upheld\|rejected` | moderator | Review disputes + counts |
+| POST | `/api/moderation/disputes/:id/resolve` | moderator | `{action: keep\|remove\|resolve, note}` |
+
+Removed complaints are excluded from all public endpoints (`/api/complaints`, dossiers, `/api/meta`).

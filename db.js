@@ -2,6 +2,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import crypto from "node:crypto";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // DB location is configurable so a Railway (or any host) persistent volume can
@@ -18,6 +19,41 @@ export const CATEGORIES = [
   "Trades & Construction", "Retail", "Warranty & Insurance",
   "Customer Service", "Professional Services", "Other"
 ];
+
+// Grounds on which a business can dispute a complaint (sent to the client).
+export const DISPUTE_REASONS = [
+  "Factually inaccurate",
+  "Already resolved",
+  "Not a genuine customer",
+  "Abusive or defamatory",
+  "Duplicate or spam",
+  "Other"
+];
+
+// A seeded moderator so the moderation queue is reachable out of the box.
+// Demo credentials only — documented in the README; change for any real use.
+export const DEMO_MODERATOR = { email: "moderator@zerostars.test", password: "zerostars-mod" };
+
+function hashPassword(password, salt = crypto.randomBytes(16).toString("hex")) {
+  const hash = crypto.scryptSync(password, salt, 64).toString("hex");
+  return { hash, salt };
+}
+
+function ensureColumn(table, col, decl) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!cols.some(c => c.name === col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`);
+}
+
+function ensureModerator() {
+  const existing = db.prepare("SELECT id FROM users WHERE email = ?").get(DEMO_MODERATOR.email);
+  if (existing) {
+    db.prepare("UPDATE users SET is_moderator = 1 WHERE id = ?").run(existing.id);
+    return;
+  }
+  const { hash, salt } = hashPassword(DEMO_MODERATOR.password);
+  db.prepare("INSERT INTO users (email, pass_hash, pass_salt, is_moderator) VALUES (?,?,?,1)")
+    .run(DEMO_MODERATOR.email, hash, salt);
+}
 
 function migrate() {
   db.exec(`
@@ -62,9 +98,36 @@ function migrate() {
       body TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+    CREATE TABLE IF NOT EXISTS disputes (
+      id INTEGER PRIMARY KEY,
+      complaint_id INTEGER NOT NULL REFERENCES complaints(id) ON DELETE CASCADE,
+      raised_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      reason TEXT NOT NULL,
+      detail TEXT NOT NULL DEFAULT '',
+      state TEXT NOT NULL DEFAULT 'open',          -- open | upheld | rejected
+      resolution TEXT,                             -- keep | remove | resolve
+      moderator_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      moderator_note TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      resolved_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS moderation_log (
+      id INTEGER PRIMARY KEY,
+      dispute_id INTEGER REFERENCES disputes(id) ON DELETE SET NULL,
+      complaint_id INTEGER,
+      moderator_id INTEGER,
+      action TEXT NOT NULL,
+      note TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
     CREATE INDEX IF NOT EXISTS idx_complaints_biz ON complaints(business_id);
     CREATE INDEX IF NOT EXISTS idx_replies_complaint ON replies(complaint_id);
+    CREATE INDEX IF NOT EXISTS idx_disputes_complaint ON disputes(complaint_id);
+    CREATE INDEX IF NOT EXISTS idx_disputes_state ON disputes(state);
   `);
+  // Columns added after the initial schema shipped (safe for existing DBs).
+  ensureColumn("users", "is_moderator", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn("complaints", "mod_state", "TEXT NOT NULL DEFAULT 'published'"); // published | disputed | removed
 }
 
 const SEED_BUSINESSES = [
@@ -150,10 +213,11 @@ const SEED_COMPLAINTS = [
 
 export function seed({ force = false } = {}) {
   migrate();
+  ensureModerator(); // idempotent — always available
   const count = db.prepare("SELECT COUNT(*) AS n FROM businesses").get().n;
   if (count > 0 && !force) return;
   if (force) {
-    db.exec("DELETE FROM replies; DELETE FROM complaints; DELETE FROM businesses;");
+    db.exec("DELETE FROM moderation_log; DELETE FROM disputes; DELETE FROM replies; DELETE FROM complaints; DELETE FROM businesses;");
   }
   const insBiz = db.prepare("INSERT OR IGNORE INTO businesses (slug,name,cat,loc,kind) VALUES (?,?,?,?,?)");
   const bizId = {};
@@ -169,6 +233,17 @@ export function seed({ force = false } = {}) {
     const bcat = SEED_BUSINESSES.find(b => b.slug === c.biz).cat;
     const r = insC.run(c.pid, bizId[c.biz], bcat, c.sev, c.status, c.title, c.body, c.author, c.date + " 09:00:00");
     if (c.reply) insR.run(r.lastInsertRowid, c.reply.by, c.reply.text, c.reply.date + " 10:00:00");
+  }
+  // One sample open dispute so the moderation queue has something to action.
+  const disputed = db.prepare("SELECT id FROM complaints WHERE public_id = ?").get("ZS-0955");
+  if (disputed) {
+    db.prepare(`INSERT INTO disputes (complaint_id, raised_by, reason, detail, state)
+      VALUES (?, NULL, ?, ?, 'open')`).run(
+      disputed.id,
+      "Already resolved",
+      "This customer was offered a replacement unit on 2026-08-20, which they accepted. We believe the complaint is now out of date and request a review."
+    );
+    db.prepare("UPDATE complaints SET mod_state = 'disputed' WHERE id = ?").run(disputed.id);
   }
   console.log(`Seeded ${SEED_BUSINESSES.length} businesses and ${SEED_COMPLAINTS.length} complaints.`);
 }

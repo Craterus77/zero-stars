@@ -279,3 +279,33 @@
   .respond-cta button:hover{background:var(--teal-wash)}
   .loading{display:flex;justify-content:center;padding:60px;color:var(--ink-faint);font-family:"IBM Plex Mono";font-size:13px}
   .db-badge{font-family:"IBM Plex Mono";font-size:10px;letter-spacing:.04em;color:var(--ink-faint);border:1px solid var(--line);border-radius:2px;padding:3px 7px;text-transform:uppercase}
+
+  /* ---------- moderation / disputes ---------- */
+  .status.disputed{color:var(--amber);background:var(--amber-wash)}
+  .status.disputed::before{background:var(--amber)}
+  .card-actions{display:flex;flex-wrap:wrap;gap:8px;padding:0 18px 14px}
+  .act{font-family:"Archivo";font-size:12px;font-weight:700;letter-spacing:.02em;border-radius:2px;padding:7px 11px;border:1.5px solid var(--line-strong);background:var(--surface-2);color:var(--ink-soft)}
+  .act.respond{border-color:var(--teal);color:var(--teal)}
+  .act.respond:hover{background:var(--teal-wash)}
+  .act.dispute{border-color:var(--amber);color:var(--amber)}
+  .act.dispute:hover{background:var(--amber-wash)}
+  .act.muted{border-style:dashed;color:var(--ink-faint);background:transparent;cursor:default}
+  .mod-badge{display:inline-grid;place-items:center;min-width:17px;height:17px;padding:0 4px;margin-left:6px;border-radius:9px;background:var(--accent);color:#fff;font-family:"IBM Plex Mono";font-size:10px;font-weight:600;vertical-align:middle}
+  .mod-head{margin:4px 0 14px}
+  .mod-head h2{font-family:"Archivo";font-weight:900;font-size:clamp(26px,4vw,38px);letter-spacing:-.025em;margin:0}
+  .mod-head p{color:var(--ink-soft);font-size:15px;margin:10px 0 0;max-width:70ch}
+  .mod-tabs{display:flex;gap:8px;margin:0 0 16px;border-bottom:1px solid var(--line);padding-bottom:12px}
+  .mod-tab{font-family:"Archivo";font-weight:700;font-size:13px;border:1.5px solid var(--line-strong);background:var(--surface);color:var(--ink-soft);border-radius:2px;padding:8px 13px;display:flex;align-items:center;gap:7px}
+  .mod-tab:hover{border-color:var(--ink)}
+  .mod-tab.active{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+  .mod-tab-n{font-family:"IBM Plex Mono";font-size:11px;opacity:.8}
+  .mod-case{border-left:3px solid var(--amber)}
+  .dispute-block{margin:2px 18px 14px;border-left:3px solid var(--amber);background:var(--amber-wash);padding:12px 15px;border-radius:0 3px 3px 0}
+  .dispute-head{font-family:"Archivo";font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--amber);margin-bottom:5px}
+  .dispute-by{font-family:"IBM Plex Mono";font-size:10.5px;font-weight:400;letter-spacing:0;text-transform:none;color:var(--ink-faint)}
+  .dispute-detail{font-size:15px;color:var(--ink-soft);line-height:1.45;margin:0}
+  .mod-actions{display:flex;flex-direction:column;gap:10px;padding:4px 18px 16px;border-top:1px dashed var(--line);margin-top:2px;padding-top:14px}
+  .mod-note{background:var(--surface-2);border:1.5px solid var(--line-strong);border-radius:2px;color:var(--ink);padding:9px 11px;font-family:"Newsreader",serif;font-size:14px;width:100%}
+  .mod-note:focus{outline:none;border-color:var(--ink)}
+  .mod-btns{display:flex;flex-wrap:wrap;gap:8px}
+  @media (max-width:620px){ .mod-btns .btn{flex:1} }
