@@ -9,7 +9,9 @@
   },
   "scripts": {
     "start": "node --no-warnings server.js",
-    "seed": "node --no-warnings db.js --reseed"
+    "seed": "node --no-warnings db.js --reseed",
+    "check": "node --check server.js && node --check db.js && node --check public/app.js",
+    "test": "node --no-warnings --test --test-concurrency=1"
   },
   "dependencies": {
     "express": "^4.21.2"
