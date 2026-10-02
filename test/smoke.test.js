@@ -175,3 +175,55 @@ test("dispute → moderator remove hides the complaint from public view", async 
   list = await (await fetch(`${BASE}/api/complaints`)).json();
   assert.ok(!list.complaints.some(c => c.id === "ZS-0912"), "removed complaint must not be public");
 });
+
+/* ---------- social: downvotes + comments ---------- */
+test("downvote toggles on and off and updates the count", async () => {
+  const reg = await fetch(`${BASE}/api/auth/register`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "voter@zerostars.test", password: "voter-123" })
+  });
+  const cookie = cookieOf(reg);
+  const before = (await (await fetch(`${BASE}/api/complaints`)).json()).complaints.find(c => c.id === "ZS-1017").downvotes;
+
+  const on = await (await fetch(`${BASE}/api/complaints/ZS-1017/vote`, { method: "POST", headers: { Cookie: cookie } })).json();
+  assert.equal(on.voted, true);
+  assert.equal(on.downvotes, before + 1);
+
+  const off = await (await fetch(`${BASE}/api/complaints/ZS-1017/vote`, { method: "POST", headers: { Cookie: cookie } })).json();
+  assert.equal(off.voted, false);
+  assert.equal(off.downvotes, before);
+});
+
+test("voting requires auth", async () => {
+  const r = await fetch(`${BASE}/api/complaints/ZS-1017/vote`, { method: "POST" });
+  assert.equal(r.status, 401);
+});
+
+test("comment and threaded reply post and read back", async () => {
+  const reg = await fetch(`${BASE}/api/auth/register`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "commenter@zerostars.test", password: "comm-123" })
+  });
+  const cookie = cookieOf(reg);
+
+  const top = await fetch(`${BASE}/api/complaints/ZS-1017/comments`, {
+    method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie },
+    body: JSON.stringify({ body: "Happened to me too — chasing them for weeks." })
+  });
+  assert.equal(top.status, 200);
+
+  // find the comment id we just made
+  let tree = await (await fetch(`${BASE}/api/complaints/ZS-1017/comments`)).json();
+  const mine = tree.comments.find(c => c.body.startsWith("Happened to me too"));
+  assert.ok(mine, "top-level comment should appear");
+
+  const reply = await fetch(`${BASE}/api/complaints/ZS-1017/comments`, {
+    method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie },
+    body: JSON.stringify({ body: "Same here, lodge it with fair trading.", parentId: mine.id })
+  });
+  assert.equal(reply.status, 200);
+
+  tree = await (await fetch(`${BASE}/api/complaints/ZS-1017/comments`)).json();
+  const parent = tree.comments.find(c => c.id === mine.id);
+  assert.ok(parent.replies.some(r => r.body.startsWith("Same here")), "reply should nest under its parent");
+});

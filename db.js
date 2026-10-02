@@ -120,10 +120,28 @@ function migrate() {
       note TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+    CREATE TABLE IF NOT EXISTS votes (
+      id INTEGER PRIMARY KEY,
+      complaint_id INTEGER NOT NULL REFERENCES complaints(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(complaint_id, user_id)
+    );
+    CREATE TABLE IF NOT EXISTS comments (
+      id INTEGER PRIMARY KEY,
+      complaint_id INTEGER NOT NULL REFERENCES complaints(id) ON DELETE CASCADE,
+      user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      parent_id INTEGER REFERENCES comments(id) ON DELETE CASCADE,
+      author_label TEXT NOT NULL,
+      body TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
     CREATE INDEX IF NOT EXISTS idx_complaints_biz ON complaints(business_id);
     CREATE INDEX IF NOT EXISTS idx_replies_complaint ON replies(complaint_id);
     CREATE INDEX IF NOT EXISTS idx_disputes_complaint ON disputes(complaint_id);
     CREATE INDEX IF NOT EXISTS idx_disputes_state ON disputes(state);
+    CREATE INDEX IF NOT EXISTS idx_votes_complaint ON votes(complaint_id);
+    CREATE INDEX IF NOT EXISTS idx_comments_complaint ON comments(complaint_id);
   `);
   // Columns added after the initial schema shipped (safe for existing DBs).
   ensureColumn("users", "is_moderator", "INTEGER NOT NULL DEFAULT 0");
@@ -217,7 +235,7 @@ export function seed({ force = false } = {}) {
   const count = db.prepare("SELECT COUNT(*) AS n FROM businesses").get().n;
   if (count > 0 && !force) return;
   if (force) {
-    db.exec("DELETE FROM moderation_log; DELETE FROM disputes; DELETE FROM replies; DELETE FROM complaints; DELETE FROM businesses;");
+    db.exec("DELETE FROM votes; DELETE FROM comments; DELETE FROM moderation_log; DELETE FROM disputes; DELETE FROM replies; DELETE FROM complaints; DELETE FROM businesses;");
   }
   const insBiz = db.prepare("INSERT OR IGNORE INTO businesses (slug,name,cat,loc,kind) VALUES (?,?,?,?,?)");
   const bizId = {};
@@ -245,7 +263,41 @@ export function seed({ force = false } = {}) {
     );
     db.prepare("UPDATE complaints SET mod_state = 'disputed' WHERE id = ?").run(disputed.id);
   }
-  console.log(`Seeded ${SEED_BUSINESSES.length} businesses and ${SEED_COMPLAINTS.length} complaints.`);
+
+  // Community engagement (downvotes + threaded comments) so the social side isn't empty.
+  const demoHandles = ["sam.k", "priya.n", "jack_t", "mia.r", "tom.h", "noah.b", "ava.l", "dylan.m"];
+  const demoIds = demoHandles.map(h => {
+    const email = h.replace(/[^a-z0-9]/g, "") + "@community.zerostars.test";
+    const existing = db.prepare("SELECT id FROM users WHERE email = ?").get(email);
+    if (existing) return existing.id;
+    const { hash, salt } = hashPassword("community-" + h);
+    return db.prepare("INSERT INTO users (email, pass_hash, pass_salt) VALUES (?,?,?)").run(email, hash, salt).lastInsertRowid;
+  });
+  const cId = pid => { const r = db.prepare("SELECT id FROM complaints WHERE public_id = ?").get(pid); return r && r.id; };
+  const addVotes = (pid, n) => {
+    const id = cId(pid); if (!id) return;
+    for (let i = 0; i < Math.min(n, demoIds.length); i++)
+      db.prepare("INSERT OR IGNORE INTO votes (complaint_id, user_id) VALUES (?,?)").run(id, demoIds[i]);
+  };
+  const addComment = (pid, uIdx, body, parentId = null) => {
+    const id = cId(pid); if (!id) return null;
+    const uid = demoIds[uIdx % demoIds.length];
+    const label = demoHandles[uIdx % demoHandles.length].split(/[._]/)[0];
+    return db.prepare("INSERT INTO comments (complaint_id, user_id, parent_id, author_label, body) VALUES (?,?,?,?,?)")
+      .run(id, uid, parentId, label, body).lastInsertRowid;
+  };
+
+  addVotes("ZS-0788", 8); addVotes("ZS-1042", 7); addVotes("ZS-0994", 6);
+  addVotes("ZS-0912", 5); addVotes("ZS-0888", 3); addVotes("ZS-0864", 2);
+
+  const t1 = addComment("ZS-0788", 0, "Exact same story with mine — three dealer visits, 'no fault found' every time. You're not alone.");
+  addComment("ZS-0788", 1, "Same here. Make them put the recall acknowledgement in writing; that's what finally forced movement for me.", t1);
+  addComment("ZS-0788", 2, "Lodge it with the ACCC in parallel — took me 10 minutes and the dealer's tone changed overnight.");
+  const t2 = addComment("ZS-1042", 3, "This is gutting. If you paid the deposit by card, look into a chargeback — there may still be time.");
+  addComment("ZS-1042", 4, "Seconding the chargeback. Also check their builder's licence and report to Fair Trading in your state.", t2);
+  addComment("ZS-0994", 5, "Switched providers after the same runaround. Keep every chat transcript — you'll need them for the TIO.");
+
+  console.log(`Seeded ${SEED_BUSINESSES.length} businesses and ${SEED_COMPLAINTS.length} complaints, plus community votes and comments.`);
 }
 
 // CLI: `node db.js --reseed`

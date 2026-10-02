@@ -71,13 +71,18 @@ function requireModerator(req, res, next) {
 }
 
 /* ---------- serialization ---------- */
-function shapeComplaint(row) {
+function shapeComplaint(row, userId = null) {
   const replies = db.prepare(
     "SELECT author_name AS by, body AS text, created_at AS date FROM replies WHERE complaint_id = ? ORDER BY created_at ASC"
   ).all(row.id);
   const openDispute = db.prepare(
     "SELECT reason FROM disputes WHERE complaint_id = ? AND state = 'open' ORDER BY created_at DESC LIMIT 1"
   ).get(row.id);
+  const downvotes = db.prepare("SELECT COUNT(*) n FROM votes WHERE complaint_id = ?").get(row.id).n;
+  const commentCount = db.prepare("SELECT COUNT(*) n FROM comments WHERE complaint_id = ?").get(row.id).n;
+  const votedByMe = userId
+    ? !!db.prepare("SELECT 1 FROM votes WHERE complaint_id = ? AND user_id = ?").get(row.id, userId)
+    : false;
   return {
     id: row.public_id,
     biz: row.slug,
@@ -93,7 +98,10 @@ function shapeComplaint(row) {
     author: row.author_label,
     date: (row.created_at || "").slice(0, 10),
     reply: replies[0] ? { by: replies[0].by, text: replies[0].text, date: (replies[0].date || "").slice(0, 10) } : null,
-    replyCount: replies.length
+    replyCount: replies.length,
+    downvotes,
+    commentCount,
+    votedByMe
   };
 }
 const COMPLAINT_SELECT = `
@@ -153,9 +161,10 @@ app.get("/api/auth/me", (req, res) => {
 
 /* ---------- API: complaints ---------- */
 app.get("/api/complaints", (req, res) => {
+  const me = currentUser(req);
   const { q = "", cat = "all", status = "all", sort = "recent" } = req.query;
   // Public listing hides moderator-removed complaints.
-  let rows = db.prepare(COMPLAINT_SELECT + " WHERE c.mod_state != 'removed'").all().map(shapeComplaint);
+  let rows = db.prepare(COMPLAINT_SELECT + " WHERE c.mod_state != 'removed'").all().map(r => shapeComplaint(r, me && me.id));
   if (cat !== "all") rows = rows.filter(c => c.cat === cat);
   if (status !== "all") rows = rows.filter(c => c.status === status);
   if (q) {
@@ -164,6 +173,7 @@ app.get("/api/complaints", (req, res) => {
   }
   if (sort === "severe") rows.sort((a, b) => b.sev - a.sev || b.date.localeCompare(a.date));
   else if (sort === "business") rows.sort((a, b) => a.bizName.localeCompare(b.bizName));
+  else if (sort === "backed") rows.sort((a, b) => b.downvotes - a.downvotes || b.date.localeCompare(a.date));
   else rows.sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
   res.json({ complaints: rows });
 });
@@ -280,10 +290,11 @@ app.post("/api/moderation/disputes/:id/resolve", requireModerator, (req, res) =>
 
 /* ---------- API: business dossier ---------- */
 app.get("/api/businesses/:slug", (req, res) => {
+  const me = currentUser(req);
   const b = db.prepare("SELECT * FROM businesses WHERE slug = ?").get(req.params.slug);
   if (!b) return res.status(404).json({ error: "Business not found." });
   const rows = db.prepare(COMPLAINT_SELECT + " WHERE b.slug = ? AND c.mod_state != 'removed'").all(req.params.slug)
-    .map(shapeComplaint)
+    .map(r => shapeComplaint(r, me && me.id))
     .sort((a, z) => z.date.localeCompare(a.date) || z.id.localeCompare(a.id));
   const avg = rows.length ? rows.reduce((s, c) => s + c.sev, 0) / rows.length : 0;
   res.json({
@@ -297,6 +308,54 @@ app.get("/api/businesses/:slug", (req, res) => {
       avgSeverity: avg
     }
   });
+});
+
+/* ---------- API: downvotes ("back this complaint") ---------- */
+app.post("/api/complaints/:publicId/vote", requireAuth, (req, res) => {
+  const c = db.prepare("SELECT * FROM complaints WHERE public_id = ?").get(req.params.publicId);
+  if (!c) return res.status(404).json({ error: "No such complaint." });
+  const existing = db.prepare("SELECT id FROM votes WHERE complaint_id = ? AND user_id = ?").get(c.id, req.user.id);
+  let voted;
+  if (existing) { db.prepare("DELETE FROM votes WHERE id = ?").run(existing.id); voted = false; }
+  else { db.prepare("INSERT OR IGNORE INTO votes (complaint_id, user_id) VALUES (?,?)").run(c.id, req.user.id); voted = true; }
+  const downvotes = db.prepare("SELECT COUNT(*) n FROM votes WHERE complaint_id = ?").get(c.id).n;
+  res.json({ ok: true, voted, downvotes });
+});
+
+/* ---------- API: comments (threaded, one level of replies) ---------- */
+app.get("/api/complaints/:publicId/comments", (req, res) => {
+  const c = db.prepare("SELECT * FROM complaints WHERE public_id = ?").get(req.params.publicId);
+  if (!c) return res.status(404).json({ error: "No such complaint." });
+  const rows = db.prepare(
+    "SELECT id, parent_id, author_label AS author, body, created_at FROM comments WHERE complaint_id = ? ORDER BY created_at ASC"
+  ).all(c.id);
+  const nodes = {};
+  rows.forEach(r => { nodes[r.id] = { id: r.id, author: r.author, body: r.body, date: (r.created_at || "").slice(0, 10), replies: [] }; });
+  const top = [];
+  rows.forEach(r => {
+    const n = nodes[r.id];
+    if (r.parent_id && nodes[r.parent_id]) nodes[r.parent_id].replies.push(n);
+    else top.push(n);
+  });
+  res.json({ comments: top, count: rows.length });
+});
+
+app.post("/api/complaints/:publicId/comments", requireAuth, (req, res) => {
+  const c = db.prepare("SELECT * FROM complaints WHERE public_id = ?").get(req.params.publicId);
+  if (!c) return res.status(404).json({ error: "No such complaint." });
+  const body = String(req.body.body || "").trim();
+  if (body.length < 2) return res.status(400).json({ error: "Say something first." });
+  if (body.length > 2000) return res.status(400).json({ error: "Keep it under 2000 characters." });
+  let parentId = req.body.parentId ? parseInt(req.body.parentId, 10) : null;
+  if (parentId) {
+    const parent = db.prepare("SELECT id, parent_id FROM comments WHERE id = ? AND complaint_id = ?").get(parentId, c.id);
+    if (!parent) return res.status(400).json({ error: "That comment no longer exists." });
+    parentId = parent.parent_id || parent.id; // keep threads one level deep
+  }
+  const label = req.user.email.split("@")[0];
+  db.prepare("INSERT INTO comments (complaint_id, user_id, parent_id, author_label, body) VALUES (?,?,?,?,?)")
+    .run(c.id, req.user.id, parentId, label, body);
+  res.json({ ok: true });
 });
 
 /* ---------- health check (for Railway / uptime probes) ---------- */

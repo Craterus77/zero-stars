@@ -103,6 +103,7 @@ async function viewHome(){
       </select>
       <select class="filter" id="sort">
         <option value="recent" ${filters.sort==="recent"?"selected":""}>Most recent</option>
+        <option value="backed" ${filters.sort==="backed"?"selected":""}>Most backed</option>
         <option value="severe" ${filters.sort==="severe"?"selected":""}>Most severe</option>
         <option value="business" ${filters.sort==="business"?"selected":""}>By business</option>
       </select>
@@ -148,8 +149,19 @@ function caseCard(c,opts={}){
       <span>${esc(c.author||"Registered submitter")}</span>
       ${c.reply?'<span class="reply-flag">✓ Right of reply used</span>':'<span class="reply-flag" style="color:var(--amber)">Awaiting business response</span>'}
     </div>
+    <div class="engage">
+      <button class="vote ${c.votedByMe?"on":""}" onclick="toggleVote('${c.id}',this)" aria-pressed="${c.votedByMe?"true":"false"}" title="Back this complaint — you've been done the same">
+        ${thumbDownSVG()}<span class="vote-n">${c.downvotes||0}</span><span class="vote-lbl">backing this</span>
+      </button>
+      <button class="cbtn" onclick="toggleComments('${c.id}',this)">
+        ${commentSVG()}<span class="c-n" data-cn="${c.id}">${c.commentCount||0}</span> <span class="cbtn-lbl">${(c.commentCount||0)===1?"comment":"comments"}</span>
+      </button>
+    </div>
+    <div class="comments" id="comments-${c.id}" hidden></div>
   </article>`;
 }
+function thumbDownSVG(){return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"><path d="M17 2h2a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-2"/><path d="M17 13V2H7.3a2 2 0 0 0-2 1.7l-1.1 7A2 2 0 0 0 6.2 13H11l-1 4.5A2.3 2.3 0 0 0 12.2 20L17 13z"/></svg>`;}
+function commentSVG(){return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.9-.9L3 20l1.3-3.9A8.4 8.4 0 0 1 3.5 11 8.5 8.5 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z"/></svg>`;}
 function replyBlock(r){
   return `<div class="reply"><div class="reply-head">↩ Response from ${esc(r.by)} · ${fmtDate(r.date)}</div><p class="reply-body">${esc(r.text)}</p></div>`;
 }
@@ -163,6 +175,89 @@ function cardActions(c,opts={}){
     buttons.push(`<span class="act muted">⚖ Under review — a moderator will decide</span>`);
   if(!buttons.length) return "";
   return `<div class="card-actions">${buttons.join("")}</div>`;
+}
+
+/* ---------- social: downvotes + comments ---------- */
+async function toggleVote(publicId, btn){
+  if(!account){ openAuth(); return; }
+  btn.disabled=true;
+  try{
+    const r=await api("/api/complaints/"+encodeURIComponent(publicId)+"/vote",{method:"POST"});
+    btn.classList.toggle("on", r.voted);
+    btn.setAttribute("aria-pressed", r.voted?"true":"false");
+    const n=btn.querySelector(".vote-n"); if(n) n.textContent=r.downvotes;
+    if(r.voted) toast("You're backing this. "+r.downvotes+" and counting.");
+  }catch(e){ toast(e.message); }
+  finally{ btn.disabled=false; }
+}
+
+async function toggleComments(publicId, btn){
+  const panel=document.getElementById("comments-"+publicId);
+  if(!panel) return;
+  if(!panel.hidden){ panel.hidden=true; btn.classList.remove("active"); return; }
+  panel.hidden=false; btn.classList.add("active");
+  panel.innerHTML=`<div class="c-loading">Loading comments…</div>`;
+  await loadComments(publicId);
+}
+
+async function loadComments(publicId){
+  const panel=document.getElementById("comments-"+publicId);
+  if(!panel) return;
+  let data;
+  try{ data=await api("/api/complaints/"+encodeURIComponent(publicId)+"/comments"); }
+  catch(e){ panel.innerHTML=`<div class="c-loading">Couldn't load comments: ${esc(e.message)}</div>`; return; }
+  const composer = account
+    ? `<div class="c-compose">
+         <textarea id="cbox-${publicId}" placeholder="Add your voice — have you been done the same?"></textarea>
+         <div class="c-compose-row"><span class="signed-as">${esc(account.email)}</span><button class="btn accent sm" onclick="postComment('${publicId}')">Comment</button></div>
+       </div>`
+    : `<div class="c-signin">${commentSVG()} <button class="link-btn" onclick="openAuth()">Sign in</button> to join the conversation.</div>`;
+  const list = data.comments.length
+    ? data.comments.map(c=>commentNode(c, publicId)).join("")
+    : `<div class="c-empty">No comments yet. Be the first to back them up.</div>`;
+  const cn=document.querySelector(`[data-cn="${publicId}"]`); if(cn) cn.textContent=data.count;
+  panel.innerHTML = composer + `<div class="c-list">${list}</div>`;
+}
+
+function commentNode(c, publicId){
+  const replies=(c.replies||[]).map(r=>`
+    <div class="c-item c-reply">
+      <div class="c-head"><span class="c-author">${esc(r.author)}</span><span class="c-date">${fmtDate(r.date)}</span></div>
+      <p class="c-body">${esc(r.body)}</p>
+    </div>`).join("");
+  return `
+    <div class="c-item">
+      <div class="c-head"><span class="c-author">${esc(c.author)}</span><span class="c-date">${fmtDate(c.date)}</span></div>
+      <p class="c-body">${esc(c.body)}</p>
+      <div class="c-actions"><button class="c-replybtn" onclick="openReplyBox('${publicId}',${c.id},this)">Reply</button></div>
+      <div class="c-replies">${replies}</div>
+    </div>`;
+}
+
+function openReplyBox(publicId, parentId, btn){
+  if(!account){ openAuth(); return; }
+  const item=btn.closest(".c-item");
+  if(item.querySelector(".c-replybox")) { item.querySelector(".c-replybox textarea").focus(); return; }
+  const box=document.createElement("div");
+  box.className="c-replybox";
+  box.innerHTML=`<textarea placeholder="Write a reply…"></textarea>
+    <div class="c-compose-row"><button class="btn ghost sm" onclick="this.closest('.c-replybox').remove()">Cancel</button>
+    <button class="btn accent sm" onclick="postComment('${publicId}',${parentId},this)">Reply</button></div>`;
+  btn.closest(".c-actions").after(box);
+  box.querySelector("textarea").focus();
+}
+
+async function postComment(publicId, parentId, btn){
+  let textarea;
+  if(parentId && btn){ textarea=btn.closest(".c-replybox").querySelector("textarea"); }
+  else { textarea=document.getElementById("cbox-"+publicId); }
+  const body=(textarea?.value||"").trim();
+  if(body.length<2){ toast("Say something first."); return; }
+  try{
+    await api("/api/complaints/"+encodeURIComponent(publicId)+"/comments",{method:"POST",body:{body,parentId:parentId||null}});
+    await loadComments(publicId);
+    toast("Posted.");
+  }catch(e){ toast(e.message); }
 }
 
 async function refreshFeed(){
