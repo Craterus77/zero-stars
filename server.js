@@ -16,7 +16,10 @@ function applyModPromotion(email, userId) {
   if (MOD_EMAILS.has(email)) db.prepare("UPDATE users SET is_moderator = 1 WHERE id = ?").run(userId);
 }
 
-seed(); // migrate + seed on first run
+// Migrate + seed on first run. SEED_FORCE=1 wipes and re-seeds on boot
+// (used once to populate demo data on a persistent volume — unset it afterwards,
+// or it will reset data on every restart).
+seed({ force: process.env.SEED_FORCE === "1" });
 
 const app = express();
 app.use(express.json({ limit: "64kb" }));
