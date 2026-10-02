@@ -143,7 +143,7 @@ function caseCard(c,opts={}){
     </div>
     <div class="engage">
       <button class="vote ${c.votedByMe?"on":""}" onclick="toggleVote('${c.id}',this)" aria-pressed="${c.votedByMe?"true":"false"}" title="Back this complaint — you've been done the same">
-        ${thumbDownSVG()}<span class="vote-n">${c.downvotes||0}</span><span class="vote-lbl">backing this</span>
+        <img class="thumb-ic" src="/thumb.webp" alt="" width="32" height="32"><span class="vote-n">${c.downvotes||0}</span><span class="vote-lbl">backing this</span>
       </button>
       <button class="cbtn" onclick="toggleComments('${c.id}',this)">
         ${commentSVG()}<span class="c-n" data-cn="${c.id}">${c.commentCount||0}</span> <span class="cbtn-lbl">${(c.commentCount||0)===1?"comment":"comments"}</span>

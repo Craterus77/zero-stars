@@ -328,11 +328,12 @@
   /* ---------- social: engagement + comments ---------- */
   .engage{display:flex;gap:10px;align-items:center;padding:10px 18px;border-top:1px solid var(--line)}
   .vote{display:inline-flex;align-items:center;gap:10px;border:1.5px solid var(--line-strong);background:var(--surface-2);color:var(--ink-soft);border-radius:4px;padding:8px 15px;font-family:"Baloo 2";font-weight:700;font-size:14px}
-  .vote svg{width:30px;height:30px;flex:none;color:var(--accent);fill:var(--accent);stroke-width:2.2;transition:transform .1s ease}
+  .vote .thumb-ic{width:32px;height:32px;flex:none;display:block;transition:transform .12s ease}
   .vote:hover{border-color:var(--accent)}
-  .vote:hover svg{transform:scale(1.12) rotate(-4deg)}
-  .vote:active svg{transform:scale(.9)}
+  .vote:hover .thumb-ic{transform:scale(1.14) rotate(-5deg)}
+  .vote:active .thumb-ic{transform:scale(.88)}
   .vote.on{background:var(--accent-wash);border-color:var(--accent);color:var(--accent)}
+  .vote.on .thumb-ic{transform:scale(1.08)}
   .vote .vote-n{font-variant-numeric:tabular-nums;font-size:17px;font-weight:800;color:var(--accent)}
   .vote .vote-lbl{font-weight:700;font-size:11px;letter-spacing:.04em;text-transform:uppercase;opacity:.8}
   .cbtn{display:inline-flex;align-items:center;gap:7px;border:none;background:none;color:var(--ink-soft);font-family:"Baloo 2";font-weight:700;font-size:13px;padding:7px 4px}
