@@ -332,7 +332,7 @@ function sortDossier(mode){
 
 /* ---------- chrome: account + theme ---------- */
 function renderChrome(){
-  document.getElementById("markStars").innerHTML=starSVG(true,15)+starSVG(true,15);
+  const ms=document.getElementById("markStars"); if(ms) ms.innerHTML=starSVG(true,15)+starSVG(true,15);
   const slot=document.getElementById("acctSlot");
   if(account){
     const initial=(account.email||"?").trim()[0].toUpperCase();
