@@ -65,23 +65,15 @@ async function viewHome(){
     <div class="wrap hero-grid">
       <div>
         <p class="eyebrow">For the unheard, the unheeded and the unbelievably pissed off</p>
-        <h1 class="title">When one star is <em>one too many.</em></h1>
-        <p class="lede">A free, public register for people who weren't heard. Search what a business is accused of before you hand over a deposit — and put your own unresolved complaint on the record.</p>
+        <h1 class="title">We heard you. <em>Now Australia will too.</em></h1>
+        <p class="lede">Getting stonewalled by a company is its own kind of insult — the unanswered email, the hold music, the complaint that quietly disappears. One voice is easy to ignore. A public register of them isn't.</p>
+        <p class="hero-punch">Alone, you're a ticket they can close. <em>Together, you're a story they can't.</em></p>
       </div>
       <div class="hero-stats">
         <div class="hstat"><span class="n neg mono">&minus;${(meta.avgSeverity||0).toFixed(1)}</span><span class="l">Register-wide average</span></div>
         <div class="hstat"><span class="n">${meta.total}</span><span class="l">Logged complaints</span></div>
         <div class="hstat"><span class="n" style="color:var(--amber)">${meta.unresolved}</span><span class="l">Still unresolved</span></div>
       </div>
-    </div>
-  </section>
-
-  <section class="manifesto">
-    <div class="wrap">
-      <p class="manifesto-kicker">Why we're here</p>
-      <h2 class="manifesto-line">We heard you. <em>Now Australia will too.</em></h2>
-      <p class="manifesto-body">Getting stonewalled by a company is its own kind of insult — the unanswered email, the hold music, the complaint that quietly disappears. One voice is easy to ignore. A public register of them isn't.</p>
-      <p class="manifesto-punch">Alone, you're a ticket they can close. <em>Together, you're a story they can't.</em></p>
     </div>
   </section>
 
@@ -283,8 +275,11 @@ function wireHome(){
 }
 
 /* ---------- business dossier ---------- */
+let dossierData=null, dossierSort="backed";
 function viewBusiness(data){
-  const b=data.business, list=data.complaints, s=data.stats;
+  dossierData=data; dossierSort="backed";
+  const b=data.business, s=data.stats;
+  const totalBacking=(data.complaints||[]).reduce((a,c)=>a+(c.downvotes||0),0);
   return `<main><div class="wrap">
     <button class="backlink" onclick="go('home')">← The register</button>
     <div class="dossier">
@@ -304,15 +299,35 @@ function viewBusiness(data){
         <div class="dstat"><div class="n">${s.total}</div><div class="l">Complaints</div></div>
         <div class="dstat"><div class="n bad">${s.unresolved}</div><div class="l">Unresolved</div></div>
         <div class="dstat"><div class="n warn">${s.ignored}</div><div class="l">Ignored</div></div>
-        <div class="dstat"><div class="n good">${s.responded}</div><div class="l">Responses given</div></div>
+        <div class="dstat"><div class="n good">${s.responded}</div><div class="l">Responses</div></div>
+        <div class="dstat"><div class="n" style="color:var(--accent)">${totalBacking}</div><div class="l">Total backing</div></div>
       </div>
     </div>
-    <div class="section-rule"><h3>Complaints on record</h3><span class="line"></span></div>
-    <div class="feed">${list.map(c=>caseCard(c,{showRespond:true})).join("")}</div>
+    <div class="section-rule">
+      <h3>Complaints on record</h3>
+      <div class="dossier-sort">
+        <button class="ds-tab active" data-ds="backed" onclick="sortDossier('backed')">Most backed</button>
+        <button class="ds-tab" data-ds="recent" onclick="sortDossier('recent')">Most recent</button>
+      </div>
+      <span class="line"></span>
+    </div>
+    <div class="feed" id="dossierFeed">${dossierList()}</div>
     <div style="margin-top:26px;text-align:center">
       <button class="btn accent" onclick="startComplaint('${b.slug}','${escAttr(b.name)}','${escAttr(b.cat)}')">Been let down by ${esc(b.name)} too? Add yours</button>
     </div>
   </div></main>`;
+}
+function dossierSorted(){
+  const arr=[...((dossierData&&dossierData.complaints)||[])];
+  if(dossierSort==="backed") arr.sort((a,b)=>(b.downvotes||0)-(a.downvotes||0) || b.date.localeCompare(a.date));
+  else arr.sort((a,b)=>b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+  return arr;
+}
+function dossierList(){ return dossierSorted().map(c=>caseCard(c,{showRespond:true})).join(""); }
+function sortDossier(mode){
+  dossierSort=mode;
+  document.querySelectorAll(".dossier-sort .ds-tab").forEach(t=>t.classList.toggle("active", t.dataset.ds===mode));
+  const feed=document.getElementById("dossierFeed"); if(feed) feed.innerHTML=dossierList();
 }
 
 /* ---------- chrome: account + theme ---------- */
