@@ -315,3 +315,12 @@
   .mod-note:focus{outline:none;border-color:var(--ink)}
   .mod-btns{display:flex;flex-wrap:wrap;gap:8px}
   @media (max-width:620px){ .mod-btns .btn{flex:1} }
+
+  /* ---------- manifesto band ---------- */
+  .manifesto{background:var(--accent-wash);border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:40px 0}
+  .manifesto-kicker{font-family:"Archivo";font-size:11px;font-weight:800;letter-spacing:.24em;text-transform:uppercase;color:var(--accent);margin:0 0 14px}
+  .manifesto-line{font-family:"Archivo";font-weight:900;font-size:clamp(26px,4.4vw,46px);line-height:1.02;letter-spacing:-.02em;margin:0;max-width:18ch;text-wrap:balance;color:var(--ink)}
+  .manifesto-line em{font-style:normal;color:var(--accent)}
+  .manifesto-body{font-size:18px;line-height:1.5;color:var(--ink-soft);max-width:62ch;margin:18px 0 0}
+  .manifesto-punch{font-family:"Archivo";font-weight:800;font-size:clamp(18px,2.4vw,24px);line-height:1.2;letter-spacing:-.01em;color:var(--ink);margin:18px 0 0;max-width:42ch;text-wrap:balance}
+  .manifesto-punch em{font-style:normal;color:var(--accent)}

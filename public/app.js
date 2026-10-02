@@ -76,6 +76,15 @@ async function viewHome(){
     </div>
   </section>
 
+  <section class="manifesto">
+    <div class="wrap">
+      <p class="manifesto-kicker">Why we're here</p>
+      <h2 class="manifesto-line">We heard you. <em>Now Australia will too.</em></h2>
+      <p class="manifesto-body">Getting stonewalled by a company is its own kind of insult — the unanswered email, the hold music, the complaint that quietly disappears. One voice is easy to ignore. A public register of them isn't.</p>
+      <p class="manifesto-punch">Alone, you're a ticket they can close. <em>Together, you're a story they can't.</em></p>
+    </div>
+  </section>
+
   <section class="register">
     <div class="wrap reg-inner">
       <div class="searchbox">
