@@ -130,7 +130,7 @@
   .hstat .l{font-family:"IBM Plex Mono";font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-faint);margin-top:5px}
 
   /* ---------- Register / filter bar ---------- */
-  .register{position:sticky;top:91px;z-index:30;background:var(--paper);border-bottom:1px solid var(--line);padding:12px 0}
+  .register{position:sticky;top:133px;z-index:30;background:var(--paper);border-bottom:1px solid var(--line);padding:12px 0}
   .reg-inner{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
   .searchbox{flex:1;min-width:220px;display:flex;align-items:center;gap:9px;background:var(--surface);border:1.5px solid var(--line-strong);border-radius:2px;padding:0 12px}
   .searchbox:focus-within{border-color:var(--ink)}
@@ -262,7 +262,7 @@
   }
   @media (max-width:620px){
     body{font-size:16px}
-    .register{top:75px}
+    .register{top:93px}
     .case-top{flex-direction:column;gap:10px}
     .case-side{flex-direction:row;width:auto;align-items:center;justify-content:space-between;width:100%}
     .sev{flex-direction:row;align-items:center;gap:8px}
@@ -394,5 +394,5 @@
   .profile-stats .dstat + .dstat{border-left:1px solid var(--line)}
 
   /* ---------- animated banner logo ---------- */
-  .logo-vid{display:block;height:62px;width:auto;background:transparent}
-  @media (max-width:620px){ .logo-vid{height:46px} }
+  .logo-vid{display:block;height:104px;width:auto;background:transparent}
+  @media (max-width:620px){ .logo-vid{height:64px} }
