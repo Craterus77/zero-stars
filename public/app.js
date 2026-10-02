@@ -50,6 +50,16 @@ async function render(){
   } else if(currentView.name==="moderation"){
     app.innerHTML=`<div class="loading">Loading the moderation queue…</div>`;
     await renderModeration(currentView.arg||"open");
+  } else if(currentView.name==="profile"){
+    const id = currentView.arg==="me" ? (account&&account.id) : currentView.arg;
+    if(!id){ openAuth(); app.innerHTML=await viewHome(); wireHome(); return; }
+    app.innerHTML=`<div class="loading">Loading profile…</div>`;
+    try{
+      const data=await api("/api/users/"+encodeURIComponent(id));
+      app.innerHTML=viewProfile(data);
+    }catch(e){
+      app.innerHTML=`<main><div class="wrap"><div class="empty"><div class="big">No such profile.</div><div>${esc(e.message)}</div><button class="btn ghost sm" style="margin-top:16px" onclick="go('home')">← Back to the register</button></div></div></main>`;
+    }
   } else {
     app.innerHTML=await viewHome();
     wireHome();
@@ -138,7 +148,7 @@ function caseCard(c,opts={}){
     ${cardActions(c,opts)}
     <div class="case-foot">
       <span>Filed ${fmtDate(c.date)}</span><span class="dot"></span>
-      <span>${esc(c.author||"Registered submitter")}</span>
+      ${c.authorId?`<button class="author-link" onclick="go('profile',${c.authorId})">${esc(c.author||"Registered submitter")}</button>`:`<span>${esc(c.author||"Registered submitter")}</span>`}
       ${c.reply?'<span class="reply-flag">✓ Right of reply used</span>':'<span class="reply-flag" style="color:var(--amber)">Awaiting business response</span>'}
     </div>
     <div class="engage">
@@ -212,14 +222,15 @@ async function loadComments(publicId){
 }
 
 function commentNode(c, publicId){
+  const cAuthor=(x)=> x.authorId?`<button class="c-author author-link" onclick="go('profile',${x.authorId})">${esc(x.author)}</button>`:`<span class="c-author">${esc(x.author)}</span>`;
   const replies=(c.replies||[]).map(r=>`
     <div class="c-item c-reply">
-      <div class="c-head"><span class="c-author">${esc(r.author)}</span><span class="c-date">${fmtDate(r.date)}</span></div>
+      <div class="c-head">${cAuthor(r)}<span class="c-date">${fmtDate(r.date)}</span></div>
       <p class="c-body">${esc(r.body)}</p>
     </div>`).join("");
   return `
     <div class="c-item">
-      <div class="c-head"><span class="c-author">${esc(c.author)}</span><span class="c-date">${fmtDate(c.date)}</span></div>
+      <div class="c-head">${cAuthor(c)}<span class="c-date">${fmtDate(c.date)}</span></div>
       <p class="c-body">${esc(c.body)}</p>
       <div class="c-actions"><button class="c-replybtn" onclick="openReplyBox('${publicId}',${c.id},this)">Reply</button></div>
       <div class="c-replies">${replies}</div>
@@ -330,6 +341,32 @@ function sortDossier(mode){
   const feed=document.getElementById("dossierFeed"); if(feed) feed.innerHTML=dossierList();
 }
 
+/* ---------- user profile ---------- */
+function viewProfile(data){
+  const u=data.user, s=data.stats;
+  const initial=(u.handle||"?").trim()[0].toUpperCase();
+  const emptyMsg=(m)=>`<div class="empty"><div class="big">${esc(m)}</div></div>`;
+  return `<main><div class="wrap">
+    <button class="backlink" onclick="go('home')">← The register</button>
+    <div class="profile-head">
+      <div class="profile-av">${esc(initial)}</div>
+      <div style="flex:1;min-width:0">
+        <h2>@${esc(u.handle)}${u.isModerator?' <span class="profile-mod">⚖ Moderator</span>':''}</h2>
+        <div class="profile-meta">Joined ${fmtDate(u.joined)}${u.isMe?" · this is you":""}${u.isMe&&u.email?` · ${esc(u.email)}`:""}</div>
+      </div>
+    </div>
+    <div class="profile-stats">
+      <div class="dstat"><div class="n">${s.filed}</div><div class="l">Complaints filed</div></div>
+      <div class="dstat"><div class="n" style="color:var(--accent)">${s.backed}</div><div class="l">Complaints backed</div></div>
+      <div class="dstat"><div class="n">${s.comments}</div><div class="l">Comments</div></div>
+    </div>
+    <div class="section-rule"><h3>Filed by @${esc(u.handle)}</h3><span class="line"></span></div>
+    <div class="feed">${data.filed.length ? data.filed.map(c=>caseCard(c)).join("") : emptyMsg(u.isMe?"You haven't filed a complaint yet.":"No complaints filed yet.")}</div>
+    <div class="section-rule"><h3>Backing</h3><span class="line"></span></div>
+    <div class="feed">${data.backed.length ? data.backed.map(c=>caseCard(c)).join("") : emptyMsg(u.isMe?"You're not backing anything yet.":"Not backing anything yet.")}</div>
+  </div></main>`;
+}
+
 /* ---------- chrome: account + theme ---------- */
 function renderChrome(){
   const ms=document.getElementById("markStars"); if(ms) ms.innerHTML=starSVG(true,15)+starSVG(true,15);
@@ -339,7 +376,7 @@ function renderChrome(){
     const modBtn = account.isModerator
       ? `<button class="btn ghost sm" onclick="go('moderation')" title="Moderation queue">⚖ Moderation<span id="modBadge" class="mod-badge" hidden></span></button>`
       : "";
-    slot.innerHTML = modBtn + `<div class="acct"><span class="av">${initial}</span><span>${esc(account.email)}</span><button class="close-x" title="Sign out" style="font-size:16px" onclick="signOut()">⏻</button></div>`;
+    slot.innerHTML = modBtn + `<div class="acct"><button class="acct-link" title="Your profile" onclick="go('profile','me')"><span class="av">${initial}</span><span>${esc(account.email)}</span></button><button class="close-x" title="Sign out" style="font-size:16px" onclick="signOut()">⏻</button></div>`;
     if(account.isModerator) refreshModBadge();
   } else {
     slot.innerHTML=`<button class="btn ghost sm" onclick="openAuth()">Sign in</button>`;

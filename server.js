@@ -99,6 +99,7 @@ function shapeComplaint(row, userId = null) {
     title: row.title,
     body: row.body,
     author: row.author_label,
+    authorId: row.user_id || null,
     date: (row.created_at || "").slice(0, 10),
     reply: replies[0] ? { by: replies[0].by, text: replies[0].text, date: (replies[0].date || "").slice(0, 10) } : null,
     replyCount: replies.length,
@@ -136,7 +137,7 @@ app.post("/api/auth/register", (req, res) => {
   db.prepare("INSERT INTO sessions (token, user_id) VALUES (?,?)").run(token, r.lastInsertRowid);
   setSessionCookie(res, token);
   const isMod = !!db.prepare("SELECT is_moderator FROM users WHERE id = ?").get(r.lastInsertRowid).is_moderator;
-  res.json({ user: { email, isModerator: isMod } });
+  res.json({ user: { id: r.lastInsertRowid, email, isModerator: isMod } });
 });
 app.post("/api/auth/login", (req, res) => {
   const email = String(req.body.email || "").trim().toLowerCase();
@@ -149,7 +150,7 @@ app.post("/api/auth/login", (req, res) => {
   db.prepare("INSERT INTO sessions (token, user_id) VALUES (?,?)").run(token, u.id);
   setSessionCookie(res, token);
   const isMod = !!db.prepare("SELECT is_moderator FROM users WHERE id = ?").get(u.id).is_moderator;
-  res.json({ user: { email: u.email, isModerator: isMod } });
+  res.json({ user: { id: u.id, email: u.email, isModerator: isMod } });
 });
 app.post("/api/auth/logout", (req, res) => {
   const token = parseCookies(req).zs_session;
@@ -159,7 +160,7 @@ app.post("/api/auth/logout", (req, res) => {
 });
 app.get("/api/auth/me", (req, res) => {
   const u = currentUser(req);
-  res.json({ user: u ? { email: u.email, isModerator: !!u.is_moderator } : null });
+  res.json({ user: u ? { id: u.id, email: u.email, isModerator: !!u.is_moderator } : null });
 });
 
 /* ---------- API: complaints ---------- */
@@ -330,10 +331,10 @@ app.get("/api/complaints/:publicId/comments", (req, res) => {
   const c = db.prepare("SELECT * FROM complaints WHERE public_id = ?").get(req.params.publicId);
   if (!c) return res.status(404).json({ error: "No such complaint." });
   const rows = db.prepare(
-    "SELECT id, parent_id, author_label AS author, body, created_at FROM comments WHERE complaint_id = ? ORDER BY created_at ASC"
+    "SELECT id, parent_id, user_id AS authorId, author_label AS author, body, created_at FROM comments WHERE complaint_id = ? ORDER BY created_at ASC"
   ).all(c.id);
   const nodes = {};
-  rows.forEach(r => { nodes[r.id] = { id: r.id, author: r.author, body: r.body, date: (r.created_at || "").slice(0, 10), replies: [] }; });
+  rows.forEach(r => { nodes[r.id] = { id: r.id, author: r.author, authorId: r.authorId || null, body: r.body, date: (r.created_at || "").slice(0, 10), replies: [] }; });
   const top = [];
   rows.forEach(r => {
     const n = nodes[r.id];
@@ -359,6 +360,27 @@ app.post("/api/complaints/:publicId/comments", requireAuth, (req, res) => {
   db.prepare("INSERT INTO comments (complaint_id, user_id, parent_id, author_label, body) VALUES (?,?,?,?,?)")
     .run(c.id, req.user.id, parentId, label, body);
   res.json({ ok: true });
+});
+
+/* ---------- API: user profiles ---------- */
+app.get("/api/users/:id", (req, res) => {
+  const me = currentUser(req);
+  const u = db.prepare("SELECT id, email, is_moderator, created_at FROM users WHERE id = ?").get(req.params.id);
+  if (!u) return res.status(404).json({ error: "No such user." });
+  const handle = u.email.split("@")[0];
+  const filed = db.prepare(COMPLAINT_SELECT + " WHERE c.user_id = ? AND c.mod_state != 'removed'")
+    .all(u.id).map(r => shapeComplaint(r, me && me.id))
+    .sort((a, z) => z.date.localeCompare(a.date) || z.id.localeCompare(a.id));
+  const backed = db.prepare(COMPLAINT_SELECT + " JOIN votes v ON v.complaint_id = c.id WHERE v.user_id = ? AND c.mod_state != 'removed'")
+    .all(u.id).map(r => shapeComplaint(r, me && me.id))
+    .sort((a, z) => (z.downvotes - a.downvotes) || z.date.localeCompare(a.date));
+  const comments = db.prepare("SELECT COUNT(*) n FROM comments WHERE user_id = ?").get(u.id).n;
+  const isMe = !!(me && me.id === u.id);
+  res.json({
+    user: { id: u.id, handle, joined: (u.created_at || "").slice(0, 10), isModerator: !!u.is_moderator, isMe, email: isMe ? u.email : undefined },
+    filed, backed,
+    stats: { filed: filed.length, backed: backed.length, comments }
+  });
 });
 
 /* ---------- health check (for Railway / uptime probes) ---------- */

@@ -227,3 +227,35 @@ test("comment and threaded reply post and read back", async () => {
   const parent = tree.comments.find(c => c.id === mine.id);
   assert.ok(parent.replies.some(r => r.body.startsWith("Same here")), "reply should nest under its parent");
 });
+
+/* ---------- user profiles ---------- */
+test("profile shows what a user filed and backed", async () => {
+  const reg = await fetch(`${BASE}/api/auth/register`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "profiler@zerostars.test", password: "prof-1234" })
+  });
+  const body = await reg.json();
+  const uid = body.user.id;
+  assert.ok(uid, "register should return a user id");
+  const cookie = cookieOf(reg);
+
+  // file a complaint
+  const file = await (await fetch(`${BASE}/api/complaints`, {
+    method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie },
+    body: JSON.stringify({ business: "Profile Test Co", cat: "Other", loc: "Perth, WA", severity: 3, title: "Profile smoke complaint", body: "Filed by the profile smoke test to verify the profile page." })
+  })).json();
+
+  // back an existing seed complaint
+  await fetch(`${BASE}/api/complaints/ZS-0994/vote`, { method: "POST", headers: { Cookie: cookie } });
+
+  const prof = await (await fetch(`${BASE}/api/users/${uid}`, { headers: { Cookie: cookie } })).json();
+  assert.equal(prof.user.id, uid);
+  assert.equal(prof.user.isMe, true);
+  assert.ok(prof.filed.some(c => c.id === file.publicId), "filed list should include the new complaint");
+  assert.ok(prof.backed.some(c => c.id === "ZS-0994"), "backed list should include the voted complaint");
+  assert.equal(prof.stats.filed, 1);
+  assert.ok(prof.stats.backed >= 1);
+  // the filed complaint should expose authorId for linking
+  const listed = (await (await fetch(`${BASE}/api/complaints`)).json()).complaints.find(c => c.id === file.publicId);
+  assert.equal(listed.authorId, uid);
+});
