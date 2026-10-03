@@ -1,6 +1,7 @@
 // Smoke / integration test — boots the real server against a throwaway DB and
 // exercises the API surface end to end. Runs under Node's built-in test runner:
 //   node --test
+import crypto from "node:crypto";
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -16,6 +17,8 @@ const BASE = `http://127.0.0.1:${PORT}`;
 
 let server;
 let dataDir;
+let postgres;
+let schema;
 
 function waitFor(url, timeoutMs = 8000) {
   const start = Date.now();
@@ -33,16 +36,40 @@ function waitFor(url, timeoutMs = 8000) {
 
 before(async () => {
   dataDir = mkdtempSync(path.join(tmpdir(), "zerostars-test-"));
+  // Always isolate test data; never inherit the application's DATABASE_URL.
+  let testURL = "";
+  if (process.env.TEST_DATABASE_URL) {
+    const { openDatabase } = await import("../database.js");
+    postgres = await openDatabase(null, process.env.TEST_DATABASE_URL);
+    schema = "zs_test_" + crypto.randomUUID().replaceAll("-", "");
+    await postgres.exec(`CREATE SCHEMA ${schema}`);
+    const url = new URL(process.env.TEST_DATABASE_URL);
+    url.searchParams.set("options", `-c search_path=${schema}`);
+    testURL = url.toString();
+    await new Promise((resolve, reject) => {
+      const seed = spawn(process.execPath, ["--no-warnings", "db.js", "--demo"], {
+        cwd: ROOT, env: { ...process.env, DATABASE_URL: testURL, VERCEL: "" }, stdio: "ignore"
+      });
+      seed.on("error", reject);
+      seed.on("exit", code => code === 0 ? resolve() : reject(new Error("Postgres test initialization failed")));
+    });
+  }
   server = spawn(process.execPath, ["--no-warnings", "server.js"], {
     cwd: ROOT,
-    env: { ...process.env, PORT, DATA_DIR: dataDir },
+    env: { ...process.env, PORT, DATA_DIR: dataDir, DATABASE_URL: testURL, POSTGRES_URL: "", SUPABASE_DB_URL: "", DB_PATH: "", VERCEL: "", SEED_FORCE: "" },
     stdio: "ignore"
   });
   await waitFor(`${BASE}/healthz`);
 });
 
-after(() => {
-  if (server) server.kill();
+after(async () => {
+  if (server && server.exitCode === null) {
+    await new Promise(resolve => { server.once("exit", resolve); server.kill(); });
+  }
+  if (postgres) {
+    try { if (schema) await postgres.exec(`DROP SCHEMA ${schema} CASCADE`); }
+    finally { await postgres.close(); }
+  }
   if (dataDir) { try { rmSync(dataDir, { recursive: true, force: true }); } catch {} }
 });
 

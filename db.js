@@ -1,19 +1,17 @@
-// Zero Stars — data layer (built-in node:sqlite, no native deps)
-import { DatabaseSync } from "node:sqlite";
+// Zero Stars — SQLite locally, Supabase Postgres when DATABASE_URL is set.
+import { openDatabase, isPostgres } from "./database.js";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import crypto from "node:crypto";
+import { readFileSync } from "node:fs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// DB location is configurable so a Railway (or any host) persistent volume can
-// hold the data: set DB_PATH to a full path, or DATA_DIR to a mounted directory.
-// Falls back to the app folder for local dev.
+// Local SQLite location; hosted deployments use DATABASE_URL instead.
 const DB_PATH = process.env.DB_PATH
   ? process.env.DB_PATH
   : path.join(process.env.DATA_DIR || __dirname, "zerostars.db");
 
-export const db = new DatabaseSync(DB_PATH);
-db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
+export const db = await openDatabase(DB_PATH);
 
 export const CATEGORIES = [
   "Trades & Construction", "Retail", "Warranty & Insurance",
@@ -39,24 +37,33 @@ function hashPassword(password, salt = crypto.randomBytes(16).toString("hex")) {
   return { hash, salt };
 }
 
-function ensureColumn(table, col, decl) {
-  const cols = db.prepare(`PRAGMA table_info(${table})`).all();
-  if (!cols.some(c => c.name === col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`);
+async function ensureColumn(table, col, decl) {
+  if (isPostgres) {
+    await db.exec(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${col} ${decl}`);
+    return;
+  }
+  const cols = (await db.prepare(`PRAGMA table_info(${table})`).all());
+  if (!cols.some(c => c.name === col)) await db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`);
 }
 
-function ensureModerator() {
-  const existing = db.prepare("SELECT id FROM users WHERE email = ?").get(DEMO_MODERATOR.email);
+async function ensureModerator() {
+  const existing = (await db.prepare("SELECT id FROM users WHERE email = ?").get(DEMO_MODERATOR.email));
   if (existing) {
-    db.prepare("UPDATE users SET is_moderator = 1 WHERE id = ?").run(existing.id);
+    (await db.prepare("UPDATE users SET is_moderator = 1 WHERE id = ?").run(existing.id));
     return;
   }
   const { hash, salt } = hashPassword(DEMO_MODERATOR.password);
-  db.prepare("INSERT INTO users (email, pass_hash, pass_salt, is_moderator) VALUES (?,?,?,1)")
-    .run(DEMO_MODERATOR.email, hash, salt);
+  (await db.prepare("INSERT INTO users (email, pass_hash, pass_salt, is_moderator) VALUES (?,?,?,1)")
+    .run(DEMO_MODERATOR.email, hash, salt));
 }
 
-function migrate() {
-  db.exec(`
+export async function migrate() {
+  if (isPostgres) {
+    const sql = readFileSync(new URL("./supabase/migrations/20261003000000_zero_stars.sql", import.meta.url), "utf8");
+    await db.exec(sql);
+    return;
+  }
+  await db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY,
       email TEXT UNIQUE NOT NULL,
@@ -144,8 +151,8 @@ function migrate() {
     CREATE INDEX IF NOT EXISTS idx_comments_complaint ON comments(complaint_id);
   `);
   // Columns added after the initial schema shipped (safe for existing DBs).
-  ensureColumn("users", "is_moderator", "INTEGER NOT NULL DEFAULT 0");
-  ensureColumn("complaints", "mod_state", "TEXT NOT NULL DEFAULT 'published'"); // published | disputed | removed
+  (await ensureColumn("users", "is_moderator", "INTEGER NOT NULL DEFAULT 0"));
+  (await ensureColumn("complaints", "mod_state", "TEXT NOT NULL DEFAULT 'published'")); // published | disputed | removed
 }
 
 const SEED_BUSINESSES = [
@@ -229,19 +236,19 @@ const SEED_COMPLAINTS = [
     reply: null }
 ];
 
-export function seed({ force = false } = {}) {
-  migrate();
-  ensureModerator(); // idempotent — always available
-  const count = db.prepare("SELECT COUNT(*) AS n FROM businesses").get().n;
+export async function seed({ force = false } = {}) {
+  (await migrate());
+  (await ensureModerator()); // idempotent — always available
+  const count = (await db.prepare("SELECT COUNT(*) AS n FROM businesses").get()).n;
   if (count > 0 && !force) return;
   if (force) {
-    db.exec("DELETE FROM votes; DELETE FROM comments; DELETE FROM moderation_log; DELETE FROM disputes; DELETE FROM replies; DELETE FROM complaints; DELETE FROM businesses;");
+    await db.exec("DELETE FROM votes; DELETE FROM comments; DELETE FROM moderation_log; DELETE FROM disputes; DELETE FROM replies; DELETE FROM complaints; DELETE FROM businesses;");
   }
   const insBiz = db.prepare("INSERT OR IGNORE INTO businesses (slug,name,cat,loc,kind) VALUES (?,?,?,?,?)");
   const bizId = {};
   for (const b of SEED_BUSINESSES) {
-    insBiz.run(b.slug, b.name, b.cat, b.loc, b.kind);
-    bizId[b.slug] = db.prepare("SELECT id FROM businesses WHERE slug=?").get(b.slug).id;
+    (await insBiz.run(b.slug, b.name, b.cat, b.loc, b.kind));
+    bizId[b.slug] = (await db.prepare("SELECT id FROM businesses WHERE slug=?").get(b.slug)).id;
   }
   const insC = db.prepare(`INSERT INTO complaints
     (public_id,business_id,cat,severity,status,title,body,author_label,created_at)
@@ -249,59 +256,66 @@ export function seed({ force = false } = {}) {
   const insR = db.prepare("INSERT INTO replies (complaint_id,author_name,body,created_at) VALUES (?,?,?,?)");
   for (const c of SEED_COMPLAINTS) {
     const bcat = SEED_BUSINESSES.find(b => b.slug === c.biz).cat;
-    const r = insC.run(c.pid, bizId[c.biz], bcat, c.sev, c.status, c.title, c.body, c.author, c.date + " 09:00:00");
-    if (c.reply) insR.run(r.lastInsertRowid, c.reply.by, c.reply.text, c.reply.date + " 10:00:00");
+    const r = (await insC.run(c.pid, bizId[c.biz], bcat, c.sev, c.status, c.title, c.body, c.author, c.date + " 09:00:00"));
+    if (c.reply) (await insR.run(r.lastInsertRowid, c.reply.by, c.reply.text, c.reply.date + " 10:00:00"));
   }
   // One sample open dispute so the moderation queue has something to action.
-  const disputed = db.prepare("SELECT id FROM complaints WHERE public_id = ?").get("ZS-0955");
+  const disputed = (await db.prepare("SELECT id FROM complaints WHERE public_id = ?").get("ZS-0955"));
   if (disputed) {
-    db.prepare(`INSERT INTO disputes (complaint_id, raised_by, reason, detail, state)
+    (await db.prepare(`INSERT INTO disputes (complaint_id, raised_by, reason, detail, state)
       VALUES (?, NULL, ?, ?, 'open')`).run(
       disputed.id,
       "Already resolved",
       "This customer was offered a replacement unit on 2026-08-20, which they accepted. We believe the complaint is now out of date and request a review."
-    );
-    db.prepare("UPDATE complaints SET mod_state = 'disputed' WHERE id = ?").run(disputed.id);
+    ));
+    (await db.prepare("UPDATE complaints SET mod_state = 'disputed' WHERE id = ?").run(disputed.id));
   }
 
   // Community engagement (downvotes + threaded comments) so the social side isn't empty.
   const demoHandles = ["sam.k", "priya.n", "jack_t", "mia.r", "tom.h", "noah.b", "ava.l", "dylan.m"];
-  const demoIds = demoHandles.map(h => {
+  const demoIds = (await Promise.all(demoHandles.map(async h => {
     const email = h.replace(/[^a-z0-9]/g, "") + "@community.zerostars.test";
-    const existing = db.prepare("SELECT id FROM users WHERE email = ?").get(email);
+    const existing = (await db.prepare("SELECT id FROM users WHERE email = ?").get(email));
     if (existing) return existing.id;
     const { hash, salt } = hashPassword("community-" + h);
-    return db.prepare("INSERT INTO users (email, pass_hash, pass_salt) VALUES (?,?,?)").run(email, hash, salt).lastInsertRowid;
-  });
-  const cId = pid => { const r = db.prepare("SELECT id FROM complaints WHERE public_id = ?").get(pid); return r && r.id; };
-  const addVotes = (pid, n) => {
-    const id = cId(pid); if (!id) return;
+    return (await db.prepare("INSERT INTO users (email, pass_hash, pass_salt) VALUES (?,?,?)").run(email, hash, salt)).lastInsertRowid;
+  })));
+  const cId = async pid => { const r = (await db.prepare("SELECT id FROM complaints WHERE public_id = ?").get(pid)); return r && r.id; };
+  const addVotes = async (pid, n) => {
+    const id = (await cId(pid)); if (!id) return;
     for (let i = 0; i < Math.min(n, demoIds.length); i++)
-      db.prepare("INSERT OR IGNORE INTO votes (complaint_id, user_id) VALUES (?,?)").run(id, demoIds[i]);
+      (await db.prepare("INSERT OR IGNORE INTO votes (complaint_id, user_id) VALUES (?,?)").run(id, demoIds[i]));
   };
-  const addComment = (pid, uIdx, body, parentId = null) => {
-    const id = cId(pid); if (!id) return null;
+  const addComment = async (pid, uIdx, body, parentId = null) => {
+    const id = (await cId(pid)); if (!id) return null;
     const uid = demoIds[uIdx % demoIds.length];
     const label = demoHandles[uIdx % demoHandles.length].split(/[._]/)[0];
-    return db.prepare("INSERT INTO comments (complaint_id, user_id, parent_id, author_label, body) VALUES (?,?,?,?,?)")
-      .run(id, uid, parentId, label, body).lastInsertRowid;
+    return (await db.prepare("INSERT INTO comments (complaint_id, user_id, parent_id, author_label, body) VALUES (?,?,?,?,?)")
+      .run(id, uid, parentId, label, body)).lastInsertRowid;
   };
 
-  addVotes("ZS-0788", 8); addVotes("ZS-1042", 7); addVotes("ZS-0994", 6);
-  addVotes("ZS-0912", 5); addVotes("ZS-0888", 3); addVotes("ZS-0864", 2);
+  (await addVotes("ZS-0788", 8)); (await addVotes("ZS-1042", 7)); (await addVotes("ZS-0994", 6));
+  (await addVotes("ZS-0912", 5)); (await addVotes("ZS-0888", 3)); (await addVotes("ZS-0864", 2));
 
-  const t1 = addComment("ZS-0788", 0, "Exact same story with mine — three dealer visits, 'no fault found' every time. You're not alone.");
-  addComment("ZS-0788", 1, "Same here. Make them put the recall acknowledgement in writing; that's what finally forced movement for me.", t1);
-  addComment("ZS-0788", 2, "Lodge it with the ACCC in parallel — took me 10 minutes and the dealer's tone changed overnight.");
-  const t2 = addComment("ZS-1042", 3, "This is gutting. If you paid the deposit by card, look into a chargeback — there may still be time.");
-  addComment("ZS-1042", 4, "Seconding the chargeback. Also check their builder's licence and report to Fair Trading in your state.", t2);
-  addComment("ZS-0994", 5, "Switched providers after the same runaround. Keep every chat transcript — you'll need them for the TIO.");
+  const t1 = (await addComment("ZS-0788", 0, "Exact same story with mine — three dealer visits, 'no fault found' every time. You're not alone."));
+  (await addComment("ZS-0788", 1, "Same here. Make them put the recall acknowledgement in writing; that's what finally forced movement for me.", t1));
+  (await addComment("ZS-0788", 2, "Lodge it with the ACCC in parallel — took me 10 minutes and the dealer's tone changed overnight."));
+  const t2 = (await addComment("ZS-1042", 3, "This is gutting. If you paid the deposit by card, look into a chargeback — there may still be time."));
+  (await addComment("ZS-1042", 4, "Seconding the chargeback. Also check their builder's licence and report to Fair Trading in your state.", t2));
+  (await addComment("ZS-0994", 5, "Switched providers after the same runaround. Keep every chat transcript — you'll need them for the TIO."));
 
   console.log(`Seeded ${SEED_BUSINESSES.length} businesses and ${SEED_COMPLAINTS.length} complaints, plus community votes and comments.`);
 }
 
-// CLI: `node db.js --reseed`
+// Initialize the hosted schema explicitly; never on a serverless cold start.
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
-  seed({ force: process.argv.includes("--reseed") });
-  console.log("DB ready at", DB_PATH);
+  try {
+    if (isPostgres && process.argv.includes("--reseed"))
+      throw new Error("Hosted database resets are disabled. Use a disposable database for demos.");
+    if (isPostgres && !process.argv.includes("--demo")) await migrate();
+    else await seed({ force: process.argv.includes("--reseed") });
+    console.log(isPostgres ? "Hosted database initialized." : "Local database initialized.");
+  } finally {
+    await db.close();
+  }
 }

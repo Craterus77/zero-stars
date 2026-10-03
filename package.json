@@ -10,10 +10,15 @@
   "scripts": {
     "start": "node --no-warnings server.js",
     "seed": "node --no-warnings db.js --reseed",
-    "check": "node --check server.js && node --check db.js && node --check public/app.js",
-    "test": "node --no-warnings --test --test-concurrency=1"
+    "check": "node --check server.js && node --check db.js && node --check database.js && node --check api/index.js && node --check public/app.js",
+    "test": "node --no-warnings --test --test-concurrency=1",
+    "db:setup": "node --no-warnings db.js",
+    "db:demo": "node --no-warnings db.js --demo"
   },
   "dependencies": {
-    "express": "^4.21.2"
+    "@supabase/ssr": "^0.12.7",
+    "@supabase/supabase-js": "^2.117.2",
+    "express": "^4.21.2",
+    "pg": "^8.23.1"
   }
 }

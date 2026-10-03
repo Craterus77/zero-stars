@@ -10,3 +10,9 @@ zerostars.db-shm
 *.log
 .DS_Store
 Thumbs.db
+
+# local credentials and Vercel project state
+.env
+.env.*
+!.env.example
+.vercel/

@@ -1,0 +1,5 @@
+# Migration files are under supabase/migrations for GitHub-connected Supabase branches.
+project_id = "zero-stars"
+
+[db]
+major_version = 17
