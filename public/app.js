@@ -525,6 +525,19 @@ function openComplaintForm(slug,presetName,presetCat){
           </div>
         </div>
         <div class="field">
+          <label for="fService">Product or service <span class="hint">Required</span></label>
+          <input id="fService" maxlength="160" placeholder="e.g. Washing machine, kitchen renovation, internet plan">
+        </div>
+        <div class="field row2">
+          <div class="field"><label for="fIncidentDate">When did it happen? <span class="hint">Optional</span></label><input id="fIncidentDate" type="date"><span class="hint">Leave blank if you do not know the exact date.</span></div>
+          <div class="field"><label for="fAmount">Amount involved (AUD) <span class="hint">Optional</span></label><input id="fAmount" type="number" min="0" step="0.01" placeholder="e.g. 250.00"><span class="hint">Include the amount paid or disputed, if relevant.</span></div>
+        </div>
+        <div class="field">
+          <label for="fContact">Have you contacted the business? <span class="hint">Required</span></label>
+          <select id="fContact"><option value="">Choose an answer</option><option>No, not yet</option><option>Yes, but no response</option><option>Yes, they responded but it is unresolved</option></select>
+        </div>
+        <div class="field"><label for="fContactNotes">Contact attempts and response <span class="hint">Optional</span></label><textarea id="fContactNotes" maxlength="1500" placeholder="When and how did you contact them? What did they say or offer? Do not include private phone numbers or email addresses."></textarea></div>
+        <div class="field">
           <label>How serious was the issue? <span class="hint">Required · choose one</span></label>
           <div class="sev-pick" id="sevPick" role="group" aria-label="Severity">
             ${[1,2,3,4,5].map(n=>`<button type="button" data-sev="${n}" aria-pressed="${false?"true":"false"}"><span class="sn">&minus;${n}</span><span class="sl">${["Minor","Moderate","Serious","Severe","Very severe"][n-1]}</span></button>`).join("")}
@@ -538,7 +551,8 @@ function openComplaintForm(slug,presetName,presetCat){
           <label for="fBody">What happened <span class="hint">Required · at least 20 characters</span></label>
           <textarea id="fBody" minlength="20" maxlength="10000" placeholder="Facts, dates, amounts. What you asked for and how the business responded (or didn't)."></textarea>
         </div>
-        <div class="form-note">By filing you confirm this is a truthful, first-hand account. The business can respond publicly or ask moderators to review a disputed entry.</div>
+        <div class="field"><label for="fOutcome">What resolution would you like? <span class="hint">Required</span></label><textarea id="fOutcome" maxlength="1500" placeholder="e.g. A refund, a repair, delivery of the item, or a clear explanation."></textarea></div>
+        <div class="form-note">All these details will be included in your public complaint. Keep private information out. By filing you confirm this is a truthful, first-hand account. The business can respond publicly or ask moderators to review a disputed entry.</div>
       </div>
       <div class="modal-foot">
         <span class="signed-as">Public name: ${account?esc(account.displayName||"Member"):"—"}</span>
@@ -755,9 +769,9 @@ function toast(msg,star){
 
 /* Usability: local drafts contain only complaint text, never credentials. */
 function readDraft(){try{return JSON.parse(localStorage.getItem("zs_complaint_draft")||"null");}catch{return null;}}
-function saveComplaintDraft(){if(!document.getElementById("fBiz"))return;const d={};for(const [key,id] of Object.entries({business:"fBiz",cat:"fCat",loc:"fLoc",title:"fTitle",body:"fBody"}))d[key]=document.getElementById(id).value;d.severity=window.__getSev?.()||0;try{localStorage.setItem("zs_complaint_draft",JSON.stringify(d));}catch{}}
-function restoreComplaintDraft(name,cat){const d=readDraft();if(!d)return;for(const [key,id] of Object.entries({business:"fBiz",cat:"fCat",loc:"fLoc",title:"fTitle",body:"fBody"}))document.getElementById(id).value=d[key]||"";if(name)document.getElementById("fBiz").value=name;if(cat)document.getElementById("fCat").value=cat;}
-function discardComplaintDraft(){if(!confirm("Discard your saved complaint draft? This cannot be undone."))return;for(const id of ["fBiz","fCat","fLoc","fTitle","fBody"])document.getElementById(id).value="";try{localStorage.removeItem("zs_complaint_draft");}catch{}reviewedComplaint=null;closeModal();try{localStorage.removeItem("zs_complaint_draft");}catch{}}
+function saveComplaintDraft(){if(!document.getElementById("fBiz"))return;const d={};for(const [key,id] of Object.entries({business:"fBiz",cat:"fCat",loc:"fLoc",title:"fTitle",body:"fBody",service:"fService",incidentDate:"fIncidentDate",amount:"fAmount",contact:"fContact",contactNotes:"fContactNotes",outcome:"fOutcome"}))d[key]=document.getElementById(id).value;d.severity=window.__getSev?.()||0;try{localStorage.setItem("zs_complaint_draft",JSON.stringify(d));}catch{}}
+function restoreComplaintDraft(name,cat){const d=readDraft();if(!d)return;for(const [key,id] of Object.entries({business:"fBiz",cat:"fCat",loc:"fLoc",title:"fTitle",body:"fBody",service:"fService",incidentDate:"fIncidentDate",amount:"fAmount",contact:"fContact",contactNotes:"fContactNotes",outcome:"fOutcome"}))document.getElementById(id).value=d[key]||"";if(name)document.getElementById("fBiz").value=name;if(cat)document.getElementById("fCat").value=cat;}
+function discardComplaintDraft(){if(!confirm("Discard your saved complaint draft? This cannot be undone."))return;for(const id of ["fBiz","fCat","fLoc","fTitle","fBody","fService","fIncidentDate","fAmount","fContact","fContactNotes","fOutcome"])document.getElementById(id).value="";try{localStorage.removeItem("zs_complaint_draft");}catch{}reviewedComplaint=null;closeModal();try{localStorage.removeItem("zs_complaint_draft");}catch{}}
 let lookupRequest=0;
 async function lookupBusinesses(){const request=++lookupRequest;const input=document.getElementById("fBiz");if(!input)return;try{const {businesses}=await api("/api/businesses?q="+encodeURIComponent(input.value));if(request!==lookupRequest||!document.getElementById("businessOptions"))return;document.getElementById("businessOptions").innerHTML=businesses.map(b=>`<option value="${escAttr(b.name)}" data-cat="${escAttr(b.cat)}" data-loc="${escAttr(b.loc)}">${esc(b.loc)}</option>`).join("");}catch{}}
 function fieldError(id,msg){const input=document.getElementById(id);input.setAttribute("aria-invalid","true");const error=document.createElement("span");error.className="field-error";error.id=id+"Error";error.textContent=msg;input.after(error);input.setAttribute("aria-describedby",error.id);input.focus();}
@@ -765,7 +779,16 @@ function reviewComplaint(){
  document.querySelectorAll(".field-error").forEach(e=>e.remove());document.querySelectorAll('[aria-invalid]').forEach(e=>e.removeAttribute('aria-invalid'));
  const d={business:document.getElementById("fBiz").value.trim(),cat:document.getElementById("fCat").value,loc:document.getElementById("fLoc").value.trim(),severity:window.__getSev(),title:document.getElementById("fTitle").value.trim(),body:document.getElementById("fBody").value.trim()};
  if(!d.business)return fieldError("fBiz","Enter a business or tradesperson name.");if(!d.cat)return fieldError("fCat","Choose a category.");if(!d.severity){showErr("cErr","Choose how serious the issue was.");document.querySelector("#sevPick button").focus();return;}if(!d.title)return fieldError("fTitle","Add a short headline.");if(d.body.length<20)return fieldError("fBody","Describe what happened in at least 20 characters.");
- saveComplaintDraft();reviewedComplaint=d;
+ const value=id=>document.getElementById(id).value.trim();
+ if(!value("fService"))return fieldError("fService","Name the product or service involved.");
+ if(!value("fContact"))return fieldError("fContact","Tell us whether you contacted the business.");
+ if(!value("fOutcome"))return fieldError("fOutcome","Tell us what would resolve the issue.");
+ if(value("fAmount")&&(!Number.isFinite(Number(value("fAmount")))||Number(value("fAmount"))<0))return fieldError("fAmount","Enter an amount of zero or more.");
+ const details=["Product or service: "+value("fService"),"Date of issue: "+(value("fIncidentDate")||"Not specified"),...(value("fAmount")?["Amount involved: AUD "+Number(value("fAmount")).toFixed(2)]:[]),"Contacted the business: "+value("fContact"),...(value("fContactNotes")?["Contact attempts and response: "+value("fContactNotes")]:[])];
+ saveComplaintDraft();
+ d.body=details.join("\n")+"\n\nWhat happened\n"+d.body+"\n\nResolution wanted\n"+value("fOutcome");
+ if(d.body.length>10000)return fieldError("fBody","Please shorten the complaint; all details together must fit within 10,000 characters.");
+ reviewedComplaint=d;
  openModal(`<div class="modal"><div class="modal-head"><h3>Review before publishing</h3><button class="close-x" aria-label="Close review" onclick="closeModal()">×</button></div><div class="modal-body"><div class="form-err" id="cErr"></div><p>Your complaint, location and public name will be visible to everyone. Your email remains private.</p><dl><dt>Business</dt><dd>${esc(d.business)} · ${esc(d.loc||"Location not provided")}</dd><dt>Category and severity</dt><dd>${esc(d.cat)} · −${d.severity}</dd><dt>Public name</dt><dd>${esc(account.displayName||"Member")}</dd></dl><h4>${esc(d.title)}</h4><p class="complaint-text">${esc(d.body)}</p><p>Publish only truthful, first-hand experiences. Remove private contact, payment and sensitive personal details.</p><label class="confirmation"><input type="checkbox" id="publishConfirm"> I confirm this is my first-hand account and I have checked it for private information.</label></div><div class="modal-foot"><button class="btn ghost" onclick="openComplaintForm()">Back to edit</button><button class="btn accent" id="cSubmit" onclick="if(!document.getElementById('publishConfirm').checked){showErr('cErr','Confirm your account before publishing.');return;}submitComplaint()">Publish complaint</button></div></div>`);
 }
 function togglePassword(id,button){const input=document.getElementById(id);input.type=input.type==="password"?"text":"password";button.textContent=input.type==="password"?"Show password":"Hide password";}
