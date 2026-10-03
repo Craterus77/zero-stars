@@ -198,18 +198,37 @@ app.get("/api/auth/me", asyncHandler(async (req, res) => {
 }));
 
 /* ---------- API: complaints ---------- */
+// Brisbane calendar weeks run Monday 00:00 through the following Monday.
+function currentWeek(now=new Date()) {
+ const local=new Date(now.getTime()+10*3600000);
+ const monday=Date.UTC(local.getUTCFullYear(),local.getUTCMonth(),local.getUTCDate()-((local.getUTCDay()+6)%7));
+ const timestamp=ms=>new Date(ms).toISOString().slice(0,19).replace("T"," ");
+ return {start:timestamp(monday-10*3600000),end:timestamp(monday+7*86400000-10*3600000),label:new Date(monday).toLocaleDateString("en-AU",{day:"numeric",month:"short",year:"numeric",timeZone:"UTC"})};
+}
+function rankBusinesses(rows){
+ const groups=new Map();for(const row of rows){const item=groups.get(row.slug)||{slug:row.slug,name:row.name,loc:row.loc,count:0,sum:0};item.count++;item.sum+=row.severity;groups.set(row.slug,item);}
+ return [...groups.values()].map(({sum,...item})=>({...item,average:sum/item.count})).sort((a,b)=>b.average-a.average||b.count-a.count||a.name.localeCompare(b.name)).map((item,index)=>({...item,rank:index+1}));
+}
+app.get("/api/shit-list",asyncHandler(async(req,res)=>{
+ const week=currentWeek();const rows=await db.prepare(COMPLAINT_SELECT+" WHERE c.mod_state != 'removed' AND c.created_at >= ? AND c.created_at < ?").all(week.start,week.end);
+ res.json({week:week.label,timeZone:"Australia/Brisbane",businesses:rankBusinesses(rows)});
+}));
 app.get("/api/complaints", asyncHandler(async (req, res) => {
   const me = (await currentUser(req));
   const { q = "", cat = "all", status = "all", sort = "recent" } = req.query;
   // Public listing hides moderator-removed complaints.
-  let rows = (await Promise.all((await db.prepare(COMPLAINT_SELECT + " WHERE c.mod_state != 'removed'").all()).map(async r => (await shapeComplaint(r, me && me.id)))));
+  const week=currentWeek();
+  const source=sort==="shitlist"?await db.prepare(COMPLAINT_SELECT+" WHERE c.mod_state != 'removed' AND c.created_at >= ? AND c.created_at < ?").all(week.start,week.end):await db.prepare(COMPLAINT_SELECT+" WHERE c.mod_state != 'removed'").all();
+  const ranking=new Map(rankBusinesses(source).map(item=>[item.slug,item.rank]));
+  let rows=await Promise.all(source.map(r=>shapeComplaint(r,me&&me.id)));
   if (cat !== "all") rows = rows.filter(c => c.cat === cat);
   if (status !== "all") rows = rows.filter(c => c.status === status);
   if (q) {
     const needle = String(q).toLowerCase();
     rows = rows.filter(c => (c.bizName + " " + c.cat + " " + c.loc + " " + c.title + " " + c.body).toLowerCase().includes(needle));
   }
-  if (sort === "severe") rows.sort((a, b) => b.sev - a.sev || b.date.localeCompare(a.date));
+  if (sort === "shitlist") rows.sort((a,b)=>ranking.get(a.biz)-ranking.get(b.biz)||b.sev-a.sev||b.date.localeCompare(a.date));
+  else if (sort === "severe") rows.sort((a, b) => b.sev - a.sev || b.date.localeCompare(a.date));
   else if (sort === "business") rows.sort((a, b) => a.bizName.localeCompare(b.bizName));
   else if (sort === "backed") rows.sort((a, b) => b.downvotes - a.downvotes || b.date.localeCompare(a.date));
   else rows.sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));

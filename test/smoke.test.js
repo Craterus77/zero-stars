@@ -308,3 +308,13 @@ test("complaint detail and pagination return addressable published records",asyn
   const detail=await fetch(`${BASE}/api/complaints/${data.complaints[0].id}`);assert.equal(detail.status,200);assert.equal((await detail.json()).complaint.id,data.complaints[0].id);
   const missing=await fetch(`${BASE}/api/complaints/missing`);assert.equal(missing.status,404);
 });
+
+test("weekly rankings match the complaint sort and exclude historical seed records",async()=>{
+  const response=await fetch(`${BASE}/api/shit-list`);assert.equal(response.status,200);
+  const {businesses,timeZone}=await response.json();assert.equal(timeZone,"Australia/Brisbane");assert.ok(businesses.length>0);
+  for(let i=1;i<businesses.length;i++){const a=businesses[i-1],b=businesses[i];assert.ok(a.average>b.average || (a.average===b.average&&a.count>=b.count));}
+  const ranking=new Map(businesses.map(b=>[b.slug,b.rank]));
+  const listing=await (await fetch(`${BASE}/api/complaints?sort=shitlist&limit=100`)).json();
+  assert.ok(listing.complaints.every(c=>!/^ZS-\d+$/.test(c.id)));
+  for(let i=1;i<listing.complaints.length;i++)assert.ok(ranking.get(listing.complaints[i-1].biz)<=ranking.get(listing.complaints[i].biz));
+});

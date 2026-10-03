@@ -115,8 +115,10 @@ async function viewHome(){
         <option value="recent" ${filters.sort==="recent"?"selected":""}>Most recent</option>
         <option value="backed" ${filters.sort==="backed"?"selected":""}>Most backed</option>
         <option value="severe" ${filters.sort==="severe"?"selected":""}>Most severe</option>
+        <option value="shitlist" ${filters.sort==="shitlist"?"selected":""}>This week’s shit list</option>
         <option value="business" ${filters.sort==="business"?"selected":""}>By business</option>
       </select>
+      <button class="btn accent sm" onclick="openShitList()">Sort by shit list</button>
       <button class="btn ghost sm" onclick="clearFilters()">Clear filters</button><span class="result-count" id="rcount" role="status" aria-live="polite"></span>
     </div>
   </section>
@@ -131,7 +133,6 @@ function caseCard(c,opts={}){
     <div class="case-top">
       <div class="case-main">
         <div class="case-meta">
-          <span class="caseid">${c.id}</span>
           <a class="biz-link" href="${routeURL('business',c.biz)}" onclick="event.preventDefault();go('business','${c.biz}')">${esc(c.bizName)}</a>
         </div>
         <div class="biz-sub">${esc(c.cat)} · ${esc(c.loc)}</div>
@@ -284,7 +285,7 @@ async function refreshFeed(more=false){
     const {complaints,total}=await api("/api/complaints?"+qs);
     if(request!==feedRequest||!feed.isConnected)return;
     rc.textContent=`${total??complaints.length} complaint${(total??complaints.length)===1?"":"s"}`;
-    const filtered=filters.q||filters.cat!=="all"||filters.status!=="all";
+    const filtered=filters.q||filters.cat!=="all"||filters.status!=="all"||filters.sort==="shitlist";
     feed.innerHTML=complaints.length?complaints.map(c=>caseCard(c)).join("")+(total>complaints.length?'<button class="btn ghost" onclick="feedLimit+=20;refreshFeed(true)">Load more complaints</button>':""):
       `<div class="empty"><h2>${filtered?"No matching complaints":"No complaints yet"}</h2><p>${filtered?"Try another search or clear your filters.":"Be the first to share a first-hand experience on the register."}</p><button class="btn accent" onclick="${filtered?"clearFilters()":"startComplaint()"}">${filtered?"Clear filters":"File the first complaint"}</button></div>`;
   } catch(e){if(request===feedRequest)feed.innerHTML='<div class="empty"><h2>Could not load complaints</h2><p>'+esc(e.message)+'</p><button class="btn ghost" onclick="refreshFeed()">Retry</button></div>';}
@@ -691,7 +692,7 @@ function moderationCard(d){
   return `<article class="case mod-case">
     <div class="case-top">
       <div class="case-main">
-        <div class="case-meta"><span class="caseid">${esc(d.complaintId)}</span><button class="biz-link" onclick="go('business','${d.biz}')">${esc(d.bizName)}</button></div>
+        <div class="case-meta"><button class="biz-link" onclick="go('business','${d.biz}')">${esc(d.bizName)}</button></div>
         <div class="biz-sub">${esc(d.cat)} · ${esc(d.loc)}</div>
         <h3 class="headline">${esc(d.title)}</h3>
         <p class="body-excerpt">${esc(d.body)}</p>
@@ -785,4 +786,13 @@ function exampleComplaints(){
   {name:"Parcel Purgatory Express",cat:"Other",severity:4,title:"Delivery attempted, according to a driver who never left the van",body:"Stayed home all day for a parcel. Tracking says nobody was home. My doorbell camera says nobody was at the door. The driver has apparently mastered contactless delivery by removing the delivery. Three missed attempts later, my parcel has seen more of Australia than I have."}
  ];
  return `<section class="example-register" aria-labelledby="examplesTitle"><h2 id="examplesTitle">What a complaint can look like</h2><p class="example-note">Four fictional examples, with the sarcasm turned up. These are placeholders, not real complaints, and do not count towards register totals.</p><div class="feed">${examples.map(c=>`<article class="case example-case"><div class="case-top"><div class="case-main"><span class="chip">Fictional example</span><h3 class="example-business">${esc(c.name)}</h3><div class="biz-sub">${esc(c.cat)}</div><h4 class="headline">${esc(c.title)}</h4><p class="body-excerpt">${esc(c.body)}</p></div><div class="case-side"><div class="sev"><span class="sev-stars">${starRow(c.severity,15)}</span><span class="sev-num">−${c.severity}</span><span class="sev-label">Example severity</span></div></div></div></article>`).join("")}</div></section>`;
+}
+
+async function openShitList(){
+ filters.sort="shitlist";const sort=document.getElementById("sort");if(sort)sort.value="shitlist";refreshFeed();
+ openModal(`<div class="modal shit-list"><div class="modal-head"><h3>This week’s shit list</h3><button class="close-x" aria-label="Close" onclick="closeModal()">×</button></div><div class="modal-body" id="shitListContent" aria-live="polite">Loading this week’s rankings…</div></div>`);
+ const mount=document.getElementById("shitListContent");
+ try{const data=await api("/api/shit-list");if(!mount.isConnected)return;
+ mount.innerHTML=`<p>Week beginning ${esc(data.week)} · Brisbane time.</p><p class="ranking-basis">Ranked by average severity of published complaints filed this week, then complaint count. These are user reports, not independently verified findings. Fictional examples are excluded.</p>${data.businesses.length?`<ol class="weekly-ranking">${data.businesses.map(b=>`<li><span class="rank-number">#${b.rank}</span><div><a class="biz-link" href="${routeURL('business',b.slug)}" onclick="event.preventDefault();closeModal();go('business','${b.slug}')">${esc(b.name)}</a><p>${esc(b.loc)} · ${b.count} complaint${b.count===1?'':'s'}</p></div><strong class="rank-score" aria-label="Average severity minus ${b.average.toFixed(1)}">−${b.average.toFixed(1)}</strong></li>`).join('')}</ol>`:'<p>No complaints have been filed this week. Businesses will appear here as reports arrive.</p>'}`;
+ }catch(e){if(mount.isConnected)mount.innerHTML='<p>'+esc(e.message)+'</p><button class="btn ghost" onclick="openShitList()">Retry</button>';}
 }
