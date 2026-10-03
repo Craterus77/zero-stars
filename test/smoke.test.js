@@ -286,3 +286,25 @@ test("profile shows what a user filed and backed", async () => {
   const listed = (await (await fetch(`${BASE}/api/complaints`)).json()).complaints.find(c => c.id === file.publicId);
   assert.equal(listed.authorId, uid);
 });
+
+test("public names, single-use recovery and revoked sessions", async () => {
+  const email = `recovery-${crypto.randomUUID()}@test.example`;
+  const response = await fetch(`${BASE}/api/auth/register`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({email,password:"old-password",displayName:"Public Alias"}) });
+  const registered = await response.json();
+  assert.equal(response.status,200);
+  assert.equal(registered.user.displayName,"Public Alias");
+  const cookie=response.headers.get("set-cookie").split(";")[0];
+  const recover=async code=>fetch(`${BASE}/api/auth/recover`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,recoveryCode:code,password:"new-password"})});
+  assert.equal((await recover("wrong-code")).status,401);
+  const reset=await recover(registered.recoveryCode);assert.equal(reset.status,200);
+  const rotated=await reset.json();assert.notEqual(rotated.recoveryCode,registered.recoveryCode);
+  assert.equal((await recover(registered.recoveryCode)).status,401);
+  const me=await fetch(`${BASE}/api/auth/me`,{headers:{Cookie:cookie}});assert.equal((await me.json()).user,null);
+  const profile=await fetch(`${BASE}/api/users/${registered.user.id}`);const data=await profile.json();assert.equal(data.user.handle,"Public Alias");assert.equal(data.user.email,undefined);
+});
+
+test("complaint detail and pagination return addressable published records",async()=>{
+  const res=await fetch(`${BASE}/api/complaints?limit=2`);const data=await res.json();assert.equal(data.complaints.length,2);assert.ok(data.total>2);
+  const detail=await fetch(`${BASE}/api/complaints/${data.complaints[0].id}`);assert.equal(detail.status,200);assert.equal((await detail.json()).complaint.id,data.complaints[0].id);
+  const missing=await fetch(`${BASE}/api/complaints/missing`);assert.equal(missing.status,404);
+});

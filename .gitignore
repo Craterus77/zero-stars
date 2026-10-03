@@ -16,3 +16,6 @@ Thumbs.db
 .env.*
 !.env.example
 .vercel/
+
+# Supabase CLI scratch state
+supabase/.temp/

@@ -59,8 +59,8 @@ async function currentUser(req) {
   const token = parseCookies(req).zs_session;
   if (!token) return null;
   const row = (await db.prepare(
-    "SELECT u.id, u.email, u.is_moderator FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?"
-  ).get(token));
+    "SELECT u.id, u.email, u.display_name, u.is_moderator FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ? AND s.created_at > ?"
+  ).get(token, new Date(Date.now()-30*86400000).toISOString().slice(0,19).replace("T"," ")));
   return row || null;
 }
 async function requireAuth(req, res, next) {
@@ -120,28 +120,49 @@ const COMPLAINT_SELECT = `
 app.get("/api/meta", asyncHandler(async (req, res) => {
   // Public stats exclude moderator-removed complaints.
   const total = (await db.prepare("SELECT COUNT(*) n FROM complaints WHERE mod_state != 'removed'").get()).n;
-  const unresolved = (await db.prepare("SELECT COUNT(*) n FROM complaints WHERE mod_state != 'removed' AND status != 'responded'").get()).n;
+  const unresolved = (await db.prepare("SELECT COUNT(*) n FROM complaints WHERE mod_state != 'removed' AND status != 'resolved'").get()).n;
   const avg = (await db.prepare("SELECT AVG(severity) a FROM complaints WHERE mod_state != 'removed'").get()).a || 0;
   const businesses = (await db.prepare("SELECT COUNT(*) n FROM businesses").get()).n;
   res.json({ categories: CATEGORIES, disputeReasons: DISPUTE_REASONS, total, unresolved, avgSeverity: avg, businesses });
 }));
 
 /* ---------- API: auth ---------- */
+// Bound authentication attempts per warm instance; persisted high-entropy recovery codes
+// remain the recovery credential across instances. Never log passwords or recovery codes.
+const authAttempts=new Map();
+function limitAuth(req,res,next){const key=String(req.headers["x-forwarded-for"]||req.ip).split(",")[0];const now=Date.now();const entry=authAttempts.get(key)||{count:0,until:now+60000};if(now>entry.until){entry.count=0;entry.until=now+60000;}entry.count++;authAttempts.set(key,entry);if(authAttempts.size>10000)for(const [k,v] of authAttempts)if(v.until<now)authAttempts.delete(k);if(entry.count>20)return res.status(429).json({error:"Too many attempts. Please wait a minute and try again."});next();}
+app.use("/api/auth",limitAuth);
+app.post("/api/auth/recover",asyncHandler(async(req,res)=>{
+ const email=String(req.body.email||"").trim().toLowerCase(),code=String(req.body.recoveryCode||"").trim(),password=String(req.body.password||"");
+ if(password.length<6||password.length>256)return res.status(400).json({error:"Use a password of 6–256 characters."});
+ const u=await db.prepare("SELECT id,recovery_hash FROM users WHERE email = ?").get(email);
+ const candidate=crypto.createHash("sha256").update(code).digest("hex");
+ if(!u?.recovery_hash||!crypto.timingSafeEqual(Buffer.from(candidate,"hex"),Buffer.from(u.recovery_hash,"hex")))return res.status(401).json({error:"Email or recovery code is incorrect."});
+ const recoveryCode=crypto.randomBytes(24).toString("hex"),recoveryHash=crypto.createHash("sha256").update(recoveryCode).digest("hex"),{hash,salt}=hashPassword(password);
+ // A conditional write makes each recovery code single-use, even under concurrent requests.
+ const result=await db.prepare("UPDATE users SET pass_hash = ?, pass_salt = ?, recovery_hash = ? WHERE id = ? AND recovery_hash = ?").run(hash,salt,recoveryHash,u.id,u.recovery_hash);
+ if(!result.changes)return res.status(401).json({error:"This recovery code has already been used."});
+ await db.prepare("DELETE FROM sessions WHERE user_id = ?").run(u.id);clearSessionCookie(res);res.json({ok:true,recoveryCode});
+}));
 app.post("/api/auth/register", asyncHandler(async (req, res) => {
   const email = String(req.body.email || "").trim().toLowerCase();
   const password = String(req.body.password || "");
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: "Enter a valid email." });
-  if (password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters." });
+  if (password.length < 6 || password.length > 256) return res.status(400).json({ error: "Use a password of 6–256 characters." });
   const exists = (await db.prepare("SELECT id FROM users WHERE email = ?").get(email));
   if (exists) return res.status(409).json({ error: "That email already has an account — sign in instead." });
   const { hash, salt } = hashPassword(password);
-  const r = (await db.prepare("INSERT INTO users (email, pass_hash, pass_salt) VALUES (?,?,?)").run(email, hash, salt));
+  const displayName = String(req.body.displayName || "Member").trim();
+  if (displayName.length < 2 || displayName.length > 40 || displayName.includes("@")) return res.status(400).json({error:"Choose a public name of 2–40 characters without an email address."});
+  const recoveryCode = crypto.randomBytes(24).toString("hex");
+  const recoveryHash = crypto.createHash("sha256").update(recoveryCode).digest("hex");
+  const r = (await db.prepare("INSERT INTO users (email, pass_hash, pass_salt, display_name, recovery_hash) VALUES (?,?,?,?,?)").run(email, hash, salt, displayName, recoveryHash));
   (await applyModPromotion(email, r.lastInsertRowid));
   const token = crypto.randomBytes(24).toString("hex");
   (await db.prepare("INSERT INTO sessions (token, user_id) VALUES (?,?)").run(token, r.lastInsertRowid));
   setSessionCookie(res, token);
   const isMod = !!(await db.prepare("SELECT is_moderator FROM users WHERE id = ?").get(r.lastInsertRowid)).is_moderator;
-  res.json({ user: { id: r.lastInsertRowid, email, isModerator: isMod } });
+  res.json({ user: { id: r.lastInsertRowid, email, displayName, isModerator: isMod }, recoveryCode });
 }));
 app.post("/api/auth/login", asyncHandler(async (req, res) => {
   const email = String(req.body.email || "").trim().toLowerCase();
@@ -154,7 +175,16 @@ app.post("/api/auth/login", asyncHandler(async (req, res) => {
   (await db.prepare("INSERT INTO sessions (token, user_id) VALUES (?,?)").run(token, u.id));
   setSessionCookie(res, token);
   const isMod = !!(await db.prepare("SELECT is_moderator FROM users WHERE id = ?").get(u.id)).is_moderator;
-  res.json({ user: { id: u.id, email: u.email, isModerator: isMod } });
+  res.json({ user: { id: u.id, email: u.email, displayName:u.display_name||"Member", isModerator: isMod } });
+}));
+app.post("/api/auth/settings",asyncHandler(requireAuth),asyncHandler(async(req,res)=>{
+ const name=String(req.body.displayName||"").trim(),password=String(req.body.password||"");
+ if(name.length<2||name.length>40||name.includes("@"))return res.status(400).json({error:"Choose a public name of 2–40 characters without an email address."});
+ const u=await db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.id);
+ if(!verifyPassword(password,u.pass_salt,u.pass_hash))return res.status(401).json({error:"Enter your current password to save these settings."});
+ const recoveryCode=crypto.randomBytes(24).toString("hex"),hash=crypto.createHash("sha256").update(recoveryCode).digest("hex");
+ await db.prepare("UPDATE users SET display_name = ?, recovery_hash = ? WHERE id = ?").run(name,hash,u.id);
+ res.json({user:{id:u.id,email:u.email,displayName:name,isModerator:!!u.is_moderator},recoveryCode});
 }));
 app.post("/api/auth/logout", asyncHandler(async (req, res) => {
   const token = parseCookies(req).zs_session;
@@ -164,7 +194,7 @@ app.post("/api/auth/logout", asyncHandler(async (req, res) => {
 }));
 app.get("/api/auth/me", asyncHandler(async (req, res) => {
   const u = (await currentUser(req));
-  res.json({ user: u ? { id: u.id, email: u.email, isModerator: !!u.is_moderator } : null });
+  res.json({ user: u ? { id: u.id, email: u.email, displayName:u.display_name||"Member", isModerator: !!u.is_moderator } : null });
 }));
 
 /* ---------- API: complaints ---------- */
@@ -183,9 +213,19 @@ app.get("/api/complaints", asyncHandler(async (req, res) => {
   else if (sort === "business") rows.sort((a, b) => a.bizName.localeCompare(b.bizName));
   else if (sort === "backed") rows.sort((a, b) => b.downvotes - a.downvotes || b.date.localeCompare(a.date));
   else rows.sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
-  res.json({ complaints: rows });
+  const total=rows.length;
+  const limit=Math.min(100,Math.max(1,parseInt(req.query.limit,10)||20));
+  res.json({ complaints: rows.slice(0,limit),total });
 }));
 
+app.get("/api/businesses",asyncHandler(async(req,res)=>{
+ const q=String(req.query.q||"").trim().toLowerCase();
+ const businesses=await db.prepare("SELECT slug,name,cat,loc FROM businesses WHERE LOWER(name) LIKE ? ORDER BY name LIMIT 12").all("%"+q+"%");res.json({businesses});
+}));
+app.get("/api/complaints/:publicId",asyncHandler(async(req,res)=>{
+ const row=await db.prepare(COMPLAINT_SELECT+" WHERE c.public_id = ? AND c.mod_state != 'removed'").get(req.params.publicId);
+ if(!row)return res.status(404).json({error:"This complaint is unavailable."});const user=await currentUser(req);res.json({complaint:await shapeComplaint(row,user?.id)});
+}));
 app.post("/api/complaints", asyncHandler(requireAuth), asyncHandler(async (req, res) => {
   const bizName = String(req.body.business || "").trim();
   const cat = CATEGORIES.includes(req.body.cat) ? req.body.cat : "Other";
@@ -193,9 +233,10 @@ app.post("/api/complaints", asyncHandler(requireAuth), asyncHandler(async (req, 
   const sev = Math.min(5, Math.max(1, parseInt(req.body.severity, 10) || 3));
   const title = String(req.body.title || "").trim();
   const body = String(req.body.body || "").trim();
-  if (!bizName) return res.status(400).json({ error: "Who let you down? Name them." });
-  if (!title) return res.status(400).json({ error: "Give it a headline — one blunt line." });
-  if (body.length < 20) return res.status(400).json({ error: "Tell us what actually happened." });
+  if (!bizName) return res.status(400).json({ error: "Enter the business or tradesperson name." });
+  if (bizName.length>120 || title.length>180 || body.length>10000) return res.status(400).json({error:"Business names must be under 120 characters, headlines under 180 and descriptions under 10,000."});
+  if (!title) return res.status(400).json({ error: "Add a short headline." });
+  if (body.length < 20) return res.status(400).json({ error: "Describe what happened in at least 20 characters." });
 
   const slug = bizName.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "business";
   let biz = (await db.prepare("SELECT * FROM businesses WHERE slug = ?").get(slug));
@@ -205,7 +246,7 @@ app.post("/api/complaints", asyncHandler(requireAuth), asyncHandler(async (req, 
     biz = (await db.prepare("SELECT * FROM businesses WHERE slug = ?").get(slug));
   }
   const publicId = "ZS-" + crypto.randomUUID();
-  const authorLabel = req.user.email.split("@")[0];
+  const authorLabel = req.user.display_name || "Member";
   (await db.prepare(`INSERT INTO complaints (public_id,business_id,user_id,cat,severity,status,title,body,author_label)
     VALUES (?,?,?,?,?,?,?,?,?)`).run(publicId, biz.id, req.user.id, cat, sev, "unresolved", title, body, authorLabel));
   res.json({ ok: true, slug, publicId });
@@ -214,13 +255,13 @@ app.post("/api/complaints", asyncHandler(requireAuth), asyncHandler(async (req, 
 /* right of reply */
 app.post("/api/complaints/:publicId/reply", asyncHandler(requireAuth), asyncHandler(async (req, res) => {
   const c = (await db.prepare("SELECT * FROM complaints WHERE public_id = ?").get(req.params.publicId));
-  if (!c) return res.status(404).json({ error: "No such complaint." });
+  if (!c || c.mod_state === "removed") return res.status(404).json({ error: "No such complaint." });
   const by = String(req.body.by || "").trim();
   const text = String(req.body.text || "").trim();
   if (!by) return res.status(400).json({ error: "Who is responding? Give a business name." });
   if (text.length < 10) return res.status(400).json({ error: "Add a proper response." });
   (await db.prepare("INSERT INTO replies (complaint_id, author_name, body) VALUES (?,?,?)").run(c.id, by, text));
-  (await db.prepare("UPDATE complaints SET status = 'responded' WHERE id = ?").run(c.id));
+  (await db.prepare("UPDATE complaints SET status = CASE WHEN status = 'resolved' THEN 'resolved' ELSE 'responded' END WHERE id = ?").run(c.id));
   res.json({ ok: true });
 }));
 
@@ -289,7 +330,7 @@ app.post("/api/moderation/disputes/:id/resolve", asyncHandler(requireModerator),
     SET state = ?, resolution = ?, moderator_id = ?, moderator_note = ?, resolved_at = datetime('now')
     WHERE id = ?`).run(newDisputeState, action, req.user.id, note, d.id));
   (await db.prepare("UPDATE complaints SET mod_state = ? WHERE id = ?").run(newModState, d.complaint_id));
-  if (action === "resolve") (await db.prepare("UPDATE complaints SET status = 'responded' WHERE id = ?").run(d.complaint_id));
+  if (action === "resolve") (await db.prepare("UPDATE complaints SET status = CASE WHEN status = 'resolved' THEN 'resolved' ELSE 'responded' END WHERE id = ?").run(d.complaint_id));
   (await db.prepare("INSERT INTO moderation_log (dispute_id, complaint_id, moderator_id, action, note) VALUES (?,?,?,?,?)")
     .run(d.id, d.complaint_id, req.user.id, action, note));
   res.json({ ok: true, action });
@@ -309,7 +350,7 @@ app.get("/api/businesses/:slug", asyncHandler(async (req, res) => {
     complaints: rows,
     stats: {
       total: rows.length,
-      unresolved: rows.filter(c => c.status !== "responded").length,
+      unresolved: rows.filter(c => c.status !== "resolved").length,
       ignored: rows.filter(c => c.status === "ignored").length,
       responded: rows.filter(c => c.reply).length,
       avgSeverity: avg
@@ -359,7 +400,7 @@ app.post("/api/complaints/:publicId/comments", asyncHandler(requireAuth), asyncH
     if (!parent) return res.status(400).json({ error: "That comment no longer exists." });
     parentId = parent.parent_id || parent.id; // keep threads one level deep
   }
-  const label = req.user.email.split("@")[0];
+  const label = req.user.display_name || "Member";
   (await db.prepare("INSERT INTO comments (complaint_id, user_id, parent_id, author_label, body) VALUES (?,?,?,?,?)")
     .run(c.id, req.user.id, parentId, label, body));
   res.json({ ok: true });
@@ -368,9 +409,9 @@ app.post("/api/complaints/:publicId/comments", asyncHandler(requireAuth), asyncH
 /* ---------- API: user profiles ---------- */
 app.get("/api/users/:id", asyncHandler(async (req, res) => {
   const me = (await currentUser(req));
-  const u = (await db.prepare("SELECT id, email, is_moderator, created_at FROM users WHERE id = ?").get(req.params.id));
+  const u = (await db.prepare("SELECT id, email, display_name, is_moderator, created_at FROM users WHERE id = ?").get(req.params.id));
   if (!u) return res.status(404).json({ error: "No such user." });
-  const handle = u.email.split("@")[0];
+  const handle = u.display_name || "Member";
   const filed = (await Promise.all((await db.prepare(COMPLAINT_SELECT + " WHERE c.user_id = ? AND c.mod_state != 'removed'")
     .all(u.id)).map(async r => (await shapeComplaint(r, me && me.id)))))
     .sort((a, z) => z.date.localeCompare(a.date) || z.id.localeCompare(a.id));

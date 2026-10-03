@@ -3,7 +3,7 @@ import { openDatabase, isPostgres } from "./database.js";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import crypto from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Local SQLite location; hosted deployments use DATABASE_URL instead.
@@ -59,8 +59,8 @@ async function ensureModerator() {
 
 export async function migrate() {
   if (isPostgres) {
-    const sql = readFileSync(new URL("./supabase/migrations/20261003000000_zero_stars.sql", import.meta.url), "utf8");
-    await db.exec(sql);
+    const directory = new URL("./supabase/migrations/", import.meta.url);
+    for (const file of readdirSync(directory).filter(file=>file.endsWith(".sql")).sort()) await db.exec(readFileSync(new URL(file,directory),"utf8"));
     return;
   }
   await db.exec(`
@@ -152,6 +152,8 @@ export async function migrate() {
   `);
   // Columns added after the initial schema shipped (safe for existing DBs).
   (await ensureColumn("users", "is_moderator", "INTEGER NOT NULL DEFAULT 0"));
+  await ensureColumn("users", "display_name", "TEXT NOT NULL DEFAULT 'Member'");
+  await ensureColumn("users", "recovery_hash", "TEXT");
   (await ensureColumn("complaints", "mod_state", "TEXT NOT NULL DEFAULT 'published'")); // published | disputed | removed
 }
 

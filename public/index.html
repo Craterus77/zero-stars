@@ -1,16 +1,18 @@
 <!doctype html>
-<!-- autodeploy-test: e7k2 -->
+
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Zero Stars</title>
+<title>Zero Stars — Public complaints register</title>
+<meta name="description" content="Search public complaints, share your first-hand experience and read responses on Zero Stars.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;500;600;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
+<a class="skip-link" href="#app">Skip to the register</a>
 
 <header class="mast">
   <div class="wrap mast-row">
@@ -18,19 +20,19 @@
       <video class="logo-vid" src="/logo.webm" autoplay muted playsinline poster="/logo.webp" aria-label="Zero Stars — when one star is one too many">
         <img class="logo-img" src="/logo.webp" alt="Zero Stars — when one star is one too many">
       </video>
-      <span class="tagline">When one star<br>is one too many</span>
+
     </button>
     <div class="mast-spacer"></div>
     <div class="mast-actions">
-      <span class="db-badge" title="Backed by a real SQLite database + API">● live db</span>
+
       <div id="acctSlot"></div>
       <button class="icon-btn" id="themeBtn" title="Toggle theme" aria-label="Toggle light or dark theme"></button>
-      <button class="btn accent" onclick="startComplaint()">Make yourself heard</button>
+      <button class="btn accent" onclick="startComplaint()">File a complaint</button>
     </div>
   </div>
 </header>
 
-<div id="app"><div class="loading">Loading the register…</div></div>
+<div id="app" tabindex="-1"><div class="loading">Loading the register…</div></div>
 
 <footer>
   <div class="wrap foot-grid">
@@ -51,16 +53,16 @@
       <h4>Fair use</h4>
       <ul>
         <li>Complaints must be truthful and first-hand.</li>
-        <li>Businesses may respond or flag a case as resolved.</li>
+        <li>Responses are unverified unless explicitly stated. Moderators review disputed cases.</li>
         <li>Disputed entries go to moderation review.</li>
       </ul>
     </div>
   </div>
-  <div class="wrap"><p class="disc">Full-stack prototype. Data persists in a local SQLite database via a Node/Express API. All seeded businesses, complaints and responses are fictional and for demonstration only — any resemblance to a real company is coincidental.</p></div>
+  <div class="wrap"><p class="disc">Complaints, responses, comments and public display names are visible to everyone. Your email is not displayed publicly. Do not publish private contact details, payment information or sensitive documents. A response does not mean an issue has been resolved.</p></div>
 </footer>
 
 <div class="overlay" id="overlay"><div id="modalMount"></div></div>
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
 <script src="/app.js"></script>
 </body>

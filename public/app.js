@@ -31,28 +31,35 @@ function starRow(sev,size){ let h=""; for(let i=1;i<=5;i++) h+=starSVG(i<=sev,si
 function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
 function escAttr(s){ return esc(s); }
 function fmtDate(iso){ try{const d=new Date(iso+"T00:00:00"); return d.toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"});}catch(e){return iso;} }
-function statusLabel(s){ return s==="responded"?"Business responded":s==="ignored"?"Ignored / stonewalled":"Unresolved"; }
+function statusLabel(s){ return ({responded:"Business responded", resolved:"Resolved", ignored:"No response", unresolved:"Unresolved"})[s] || "Unresolved"; }
 
 /* ---------- router ---------- */
-function go(name,arg){ currentView={name,arg}; window.scrollTo({top:0}); render(); }
+function routeURL(name,arg){ return name==="home" ? "/" : "/"+name+"/"+encodeURIComponent(arg||""); }
+function go(name,arg){ saveComplaintDraft(); currentView={name,arg}; history.pushState({name,arg},"",routeURL(name,arg)); window.scrollTo({top:0}); render(); }
+function readRoute(){ const parts=location.pathname.split("/").filter(Boolean); currentView={name:["business","profile","complaint"].includes(parts[0])?parts[0]:"home",arg:decodeURIComponent(parts[1]||"")}; }
+window.addEventListener("popstate",()=>{readRoute();render();});
 
 async function render(){
   renderChrome();
   const app=document.getElementById("app");
-  if(currentView.name==="business"){
-    app.innerHTML=`<div class="loading">Opening the dossier…</div>`;
+  if(currentView.name==="complaint"){
+    app.innerHTML='<main class="wrap loading">Loading complaint…</main>';
+    try { const {complaint}=await api("/api/complaints/"+encodeURIComponent(currentView.arg)); app.innerHTML=`<main><div class="wrap"><a class="backlink" href="/" onclick="event.preventDefault();go('home')">← The register</a>${caseCard(complaint,{detail:true,showRespond:true})}</div></main>`; }
+    catch(e){app.innerHTML='<main class="wrap empty"><h1>Complaint unavailable</h1><p>'+esc(e.message)+'</p><a href="/">Return to the register</a></main>';}
+  } else if(currentView.name==="business"){
+    app.innerHTML=`<div class="loading">Loading business…</div>`;
     try{
       const data=await api("/api/businesses/"+encodeURIComponent(currentView.arg));
       app.innerHTML=viewBusiness(data);
     }catch(e){
-      app.innerHTML=`<main><div class="wrap"><div class="empty"><div class="big">Can't find that one — lucky them.</div><div>${esc(e.message)}</div><button class="btn ghost sm" style="margin-top:16px" onclick="go('home')">← Back to the register</button></div></div></main>`;
+      app.innerHTML=`<main><div class="wrap"><div class="empty"><div class="big">Business unavailable</div><div>${esc(e.message)}</div><button class="btn ghost sm" style="margin-top:16px" onclick="go('home')">← Back to the register</button></div></div></main>`;
     }
   } else if(currentView.name==="moderation"){
     app.innerHTML=`<div class="loading">Loading the moderation queue…</div>`;
     await renderModeration(currentView.arg||"open");
   } else if(currentView.name==="profile"){
     const id = currentView.arg==="me" ? (account&&account.id) : currentView.arg;
-    if(!id){ openAuth(); app.innerHTML=await viewHome(); wireHome(); return; }
+    if(!id){ openAuth(()=>go("profile","me")); app.innerHTML=await viewHome(); wireHome(); return; }
     app.innerHTML=`<div class="loading">Loading profile…</div>`;
     try{
       const data=await api("/api/users/"+encodeURIComponent(id));
@@ -68,21 +75,20 @@ async function render(){
 
 /* ---------- home ---------- */
 async function viewHome(){
-  let meta={total:0,unresolved:0,avgSeverity:0,businesses:0};
-  try{ meta=await api("/api/meta"); if(Array.isArray(meta.disputeReasons)) DISPUTE_REASONS=meta.disputeReasons; }catch(e){}
+  let meta={total:0,unresolved:0,avgSeverity:0,businesses:0}, metaError=false;
+  try{ meta=await api("/api/meta"); if(Array.isArray(meta.disputeReasons)) DISPUTE_REASONS=meta.disputeReasons; }catch(e){metaError=true;}
   return `
   <section class="hero">
     <div class="wrap hero-grid">
       <div>
-        <p class="eyebrow">For the unheard, the unheeded and the unbelievably pissed off</p>
-        <h1 class="title">We heard you. <em>Now Australia will too.</em></h1>
-        <p class="lede">Getting stonewalled by a company is its own kind of insult — the unanswered email, the hold music, the complaint that quietly disappears. One voice is easy to ignore. A public register of them isn't.</p>
-        <p class="hero-punch">Alone, you're a ticket they can close. <em>Together, you're a story they can't.</em></p>
+        <h1 class="title">Your experience. <em>On the record.</em></h1>
+        <p class="lede">Search first-hand complaints, read responses, or share what happened to you. Reading is free. Posting needs a free account.</p>
+        <div class="hero-actions"><button class="btn accent" onclick="startComplaint()">File a complaint</button><a class="btn ghost" href="#q">Search the register</a></div>
       </div>
-      <div class="hero-stats">
-        <div class="hstat"><span class="n neg mono">&minus;${(meta.avgSeverity||0).toFixed(1)}</span><span class="l">Register-wide average</span></div>
-        <div class="hstat"><span class="n">${meta.total}</span><span class="l">Logged complaints</span></div>
-        <div class="hstat"><span class="n" style="color:var(--amber)">${meta.unresolved}</span><span class="l">Still unresolved</span></div>
+      <div class="hero-stats">${metaError?'<button class="btn ghost" onclick="render()">Retry statistics</button>':""}
+        <div class="hstat"><span class="n neg mono">${metaError?"Unavailable":meta.total?"−"+(meta.avgSeverity||0).toFixed(1):"—"}</span><span class="l">Register-wide average</span></div>
+        <div class="hstat"><span class="n">${metaError?"—":meta.total}</span><span class="l">Logged complaints</span></div>
+        <div class="hstat"><span class="n" style="color:var(--amber)">${metaError?"—":meta.unresolved}</span><span class="l">Still unresolved</span></div>
       </div>
     </div>
   </section>
@@ -91,25 +97,26 @@ async function viewHome(){
     <div class="wrap reg-inner">
       <div class="searchbox">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-        <input id="q" type="search" placeholder="Search a business, trade, or town…" value="${escAttr(filters.q)}" autocomplete="off">
+        <input aria-label="Search complaints by business, trade or town" id="q" type="search" placeholder="Search a business, trade, or town…" value="${escAttr(filters.q)}" autocomplete="off">
       </div>
-      <select class="filter" id="cat">
+      <select aria-label="Category" class="filter" id="cat">
         <option value="all">All categories</option>
         ${CATEGORIES.map(c=>`<option value="${c}" ${filters.cat===c?"selected":""}>${c}</option>`).join("")}
       </select>
-      <select class="filter" id="status">
+      <select aria-label="Complaint status" class="filter" id="status">
         <option value="all">Any status</option>
         <option value="unresolved" ${filters.status==="unresolved"?"selected":""}>Unresolved</option>
         <option value="ignored" ${filters.status==="ignored"?"selected":""}>Ignored / stonewalled</option>
+        <option value="resolved" ${filters.status==="resolved"?"selected":""}>Resolved</option>
         <option value="responded" ${filters.status==="responded"?"selected":""}>Business responded</option>
       </select>
-      <select class="filter" id="sort">
+      <select aria-label="Sort complaints" class="filter" id="sort">
         <option value="recent" ${filters.sort==="recent"?"selected":""}>Most recent</option>
         <option value="backed" ${filters.sort==="backed"?"selected":""}>Most backed</option>
         <option value="severe" ${filters.sort==="severe"?"selected":""}>Most severe</option>
         <option value="business" ${filters.sort==="business"?"selected":""}>By business</option>
       </select>
-      <span class="result-count" id="rcount"></span>
+      <button class="btn ghost sm" onclick="clearFilters()">Clear filters</button><span class="result-count" id="rcount" role="status" aria-live="polite"></span>
     </div>
   </section>
 
@@ -117,18 +124,19 @@ async function viewHome(){
 }
 
 function caseCard(c,opts={}){
-  const unheard = c.status!=="responded";
+  const unheard = !["responded","resolved"].includes(c.status);
   return `
   <article class="case">
     <div class="case-top">
       <div class="case-main">
         <div class="case-meta">
           <span class="caseid">${c.id}</span>
-          <button class="biz-link" onclick="go('business','${c.biz}')">${esc(c.bizName)}</button>
+          <a class="biz-link" href="${routeURL('business',c.biz)}" onclick="event.preventDefault();go('business','${c.biz}')">${esc(c.bizName)}</a>
         </div>
         <div class="biz-sub">${esc(c.cat)} · ${esc(c.loc)}</div>
-        <h3 class="headline">${esc(c.title)}</h3>
-        <p class="body-excerpt">${esc(c.body)}</p>
+        <h3 class="headline"><a href="${routeURL('complaint',c.id)}" onclick="event.preventDefault();go('complaint','${c.id}')">${esc(c.title)}</a></h3>
+        <p class="body-excerpt">${esc(opts.detail?c.body:c.body.length>240?c.body.slice(0,240)+'…':c.body)}</p>
+        ${!opts.detail?`<a class="link-btn" href="${routeURL('complaint',c.id)}" onclick="event.preventDefault();go('complaint','${c.id}')">Read full complaint</a>`:""}
       </div>
       <div class="case-side">
         <div class="sev">
@@ -149,11 +157,11 @@ function caseCard(c,opts={}){
     <div class="case-foot">
       <span>Filed ${fmtDate(c.date)}</span><span class="dot"></span>
       ${c.authorId?`<button class="author-link" onclick="go('profile',${c.authorId})">${esc(c.author||"Registered submitter")}</button>`:`<span>${esc(c.author||"Registered submitter")}</span>`}
-      ${c.reply?'<span class="reply-flag">✓ Right of reply used</span>':'<span class="reply-flag" style="color:var(--amber)">Awaiting business response</span>'}
+      ${c.reply?'<span class="reply-flag">✓ Response posted · unverified</span>':'<span class="reply-flag" style="color:var(--amber)">Awaiting business response</span>'}
     </div>
     <div class="engage">
-      <button class="vote ${c.votedByMe?"on":""}" onclick="toggleVote('${c.id}',this)" aria-pressed="${c.votedByMe?"true":"false"}" title="Back this complaint — you've been done the same">
-        <img class="thumb-ic" src="/thumb.webp" alt="" width="32" height="32"><span class="vote-n">${c.downvotes||0}</span><span class="vote-lbl">backing this</span>
+      <button data-vote="${c.id}" class="vote ${c.votedByMe?"on":""}" onclick="toggleVote('${c.id}',this)" aria-pressed="${c.votedByMe?"true":"false"}" title="Show support for this complaint; this is not a rating">
+        <img class="thumb-ic" src="/thumb.webp" alt="" width="32" height="32"><span class="vote-n">${c.downvotes||0}</span><span class="vote-lbl">supporting this</span>
       </button>
       <button class="cbtn" onclick="toggleComments('${c.id}',this)">
         ${commentSVG()}<span class="c-n" data-cn="${c.id}">${c.commentCount||0}</span> <span class="cbtn-lbl">${(c.commentCount||0)===1?"comment":"comments"}</span>
@@ -165,7 +173,7 @@ function caseCard(c,opts={}){
 function thumbDownSVG(){return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"><path d="M17 2h2a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-2"/><path d="M17 13V2H7.3a2 2 0 0 0-2 1.7l-1.1 7A2 2 0 0 0 6.2 13H11l-1 4.5A2.3 2.3 0 0 0 12.2 20L17 13z"/></svg>`;}
 function commentSVG(){return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.9-.9L3 20l1.3-3.9A8.4 8.4 0 0 1 3.5 11 8.5 8.5 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z"/></svg>`;}
 function replyBlock(r){
-  return `<div class="reply"><div class="reply-head">↩ Response from ${esc(r.by)} · ${fmtDate(r.date)}</div><p class="reply-body">${esc(r.text)}</p></div>`;
+  return `<div class="reply"><div class="reply-head">↩ Unverified response from ${esc(r.by)} · ${fmtDate(r.date)}</div><p class="reply-body">${esc(r.text)}</p></div>`;
 }
 function cardActions(c,opts={}){
   const buttons=[];
@@ -181,14 +189,14 @@ function cardActions(c,opts={}){
 
 /* ---------- social: downvotes + comments ---------- */
 async function toggleVote(publicId, btn){
-  if(!account){ openAuth(); return; }
+  if(!account){ openAuth(()=>toggleVote(publicId,document.querySelector(`[data-vote="${publicId}"]`))); return; }
   btn.disabled=true;
   try{
     const r=await api("/api/complaints/"+encodeURIComponent(publicId)+"/vote",{method:"POST"});
     btn.classList.toggle("on", r.voted);
     btn.setAttribute("aria-pressed", r.voted?"true":"false");
     const n=btn.querySelector(".vote-n"); if(n) n.textContent=r.downvotes;
-    if(r.voted) toast("You're backing this. "+r.downvotes+" and counting.");
+    if(r.voted) toast("You're supporting this. "+r.downvotes+" and counting.");
   }catch(e){ toast(e.message); }
   finally{ btn.disabled=false; }
 }
@@ -210,10 +218,10 @@ async function loadComments(publicId){
   catch(e){ panel.innerHTML=`<div class="c-loading">Couldn't load comments: ${esc(e.message)}</div>`; return; }
   const composer = account
     ? `<div class="c-compose">
-         <textarea id="cbox-${publicId}" placeholder="Add your voice — have you been done the same?"></textarea>
-         <div class="c-compose-row"><span class="signed-as">${esc(account.email)}</span><button class="btn accent sm" onclick="postComment('${publicId}')">Comment</button></div>
+         <textarea aria-label="Your comment" maxlength="2000" id="cbox-${publicId}" placeholder="Add your voice — have you been done the same?"></textarea>
+         <div class="c-compose-row"><span class="signed-as">${esc(account.displayName||"Member")}</span><button class="btn accent sm" onclick="postComment('${publicId}')">Comment</button></div>
        </div>`
-    : `<div class="c-signin">${commentSVG()} <button class="link-btn" onclick="openAuth()">Sign in</button> to join the conversation.</div>`;
+    : `<div class="c-signin">${commentSVG()} <button class="link-btn" onclick="openAuth(()=>loadComments('${publicId}'))">Sign in</button> to join the conversation.</div>`;
   const list = data.comments.length
     ? data.comments.map(c=>commentNode(c, publicId)).join("")
     : `<div class="c-empty">No comments yet. Be the first to back them up.</div>`;
@@ -238,12 +246,12 @@ function commentNode(c, publicId){
 }
 
 function openReplyBox(publicId, parentId, btn){
-  if(!account){ openAuth(); return; }
+  if(!account){ openAuth(()=>openReplyBox(publicId,parentId,btn)); return; }
   const item=btn.closest(".c-item");
   if(item.querySelector(".c-replybox")) { item.querySelector(".c-replybox textarea").focus(); return; }
   const box=document.createElement("div");
   box.className="c-replybox";
-  box.innerHTML=`<textarea placeholder="Write a reply…"></textarea>
+  box.innerHTML=`<textarea aria-label="Your reply" maxlength="2000" placeholder="Write a reply…"></textarea>
     <div class="c-compose-row"><button class="btn ghost sm" onclick="this.closest('.c-replybox').remove()">Cancel</button>
     <button class="btn accent sm" onclick="postComment('${publicId}',${parentId},this)">Reply</button></div>`;
   btn.closest(".c-actions").after(box);
@@ -263,16 +271,23 @@ async function postComment(publicId, parentId, btn){
   }catch(e){ toast(e.message); }
 }
 
-async function refreshFeed(){
-  const feed=document.getElementById("feed"); const rc=document.getElementById("rcount");
+let feedRequest=0, feedLimit=20;
+function clearFilters(){ Object.assign(filters,{q:"",cat:"all",status:"all",sort:"recent"});feedLimit=20;render(); }
+async function refreshFeed(more=false){
+  const request=++feedRequest, feed=document.getElementById("feed"), rc=document.getElementById("rcount");
   if(!feed) return;
-  const qs=new URLSearchParams({q:filters.q,cat:filters.cat,status:filters.status,sort:filters.sort});
-  try{
-    const {complaints}=await api("/api/complaints?"+qs.toString());
-    if(rc) rc.textContent=`${complaints.length} complaint${complaints.length===1?"":"s"}`;
-    if(!complaints.length){ feed.innerHTML=`<div class="empty"><div class="big">Nothing here. Suspiciously quiet.</div><div>Either nobody's filed that yet, or your filters are too tight. Loosen them and look again.</div></div>`; return; }
-    feed.innerHTML=complaints.map(c=>caseCard(c)).join("");
-  }catch(e){ feed.innerHTML=`<div class="empty"><div class="big">Couldn't reach the register.</div><div>${esc(e.message)}</div></div>`; }
+  if(!more) feedLimit=20;
+  const qs=new URLSearchParams({...filters,limit:feedLimit});
+  feed.setAttribute("aria-busy","true");
+  try {
+    const {complaints,total}=await api("/api/complaints?"+qs);
+    if(request!==feedRequest||!feed.isConnected)return;
+    rc.textContent=`${total??complaints.length} complaint${(total??complaints.length)===1?"":"s"}`;
+    const filtered=filters.q||filters.cat!=="all"||filters.status!=="all";
+    feed.innerHTML=complaints.length?complaints.map(c=>caseCard(c)).join("")+(total>complaints.length?'<button class="btn ghost" onclick="feedLimit+=20;refreshFeed(true)">Load more complaints</button>':""):
+      `<div class="empty"><h2>${filtered?"No matching complaints":"No complaints yet"}</h2><p>${filtered?"Try another search or clear your filters.":"Be the first to share a first-hand experience on the register."}</p><button class="btn accent" onclick="${filtered?"clearFilters()":"startComplaint()"}">${filtered?"Clear filters":"File the first complaint"}</button></div>`;
+  } catch(e){if(request===feedRequest)feed.innerHTML='<div class="empty"><h2>Could not load complaints</h2><p>'+esc(e.message)+'</p><button class="btn ghost" onclick="refreshFeed()">Retry</button></div>';}
+  finally{feed.removeAttribute("aria-busy");}
 }
 
 let searchT;
@@ -298,10 +313,10 @@ function viewBusiness(data){
         <div style="flex:1;min-width:240px">
           <h2>${esc(b.name)}</h2>
           <div class="biz-meta"><span>${esc(b.kind||"Business")}</span><span>·</span><span>${esc(b.cat)}</span><span>·</span><span>${esc(b.loc)}</span></div>
-          <p style="color:var(--ink-soft);margin:16px 0 0;max-width:56ch">Public complaints register for ${esc(b.name)}. This page aggregates every unresolved complaint filed against this business. There is no positive-review side — a low or empty count means fewer people have reported being let down here.</p>
+          <p style="color:var(--ink-soft);margin:16px 0 0;max-width:56ch">Public complaints register for ${esc(b.name)}. This page lists published complaints and their current outcomes. There is no positive-review side — a low or empty count means fewer people have reported being let down here.</p>
         </div>
         <div class="dossier-score">
-          <div class="big">&minus;${(s.avgSeverity||0).toFixed(1)}</div>
+          <div class="big">&minus;${s.total?(s.avgSeverity||0).toFixed(1):"—"}</div>
           <div class="stars">${starRow(Math.round(s.avgSeverity||0),15)}</div>
           <div class="lbl">Average severity</div>
         </div>
@@ -355,6 +370,7 @@ function viewProfile(data){
         <div class="profile-meta">Joined ${fmtDate(u.joined)}${u.isMe?" · this is you":""}${u.isMe&&u.email?` · ${esc(u.email)}`:""}</div>
       </div>
     </div>
+    ${u.isMe?`<button class="btn ghost" onclick="openAccountSettings()">Edit public name & recovery code</button>`:""}
     <div class="profile-stats">
       <div class="dstat"><div class="n">${s.filed}</div><div class="l">Complaints filed</div></div>
       <div class="dstat"><div class="n" style="color:var(--accent)">${s.backed}</div><div class="l">Complaints backed</div></div>
@@ -369,6 +385,7 @@ function viewProfile(data){
 
 /* ---------- chrome: account + theme ---------- */
 function renderChrome(){
+  requestAnimationFrame(()=>{document.documentElement.style.setProperty("--header-height",document.querySelector("header").getBoundingClientRect().height+"px");});
   const ms=document.getElementById("markStars"); if(ms) ms.innerHTML=starSVG(true,15)+starSVG(true,15);
   const slot=document.getElementById("acctSlot");
   if(account){
@@ -376,7 +393,7 @@ function renderChrome(){
     const modBtn = account.isModerator
       ? `<button class="btn ghost sm" onclick="go('moderation')" title="Moderation queue">⚖ Moderation<span id="modBadge" class="mod-badge" hidden></span></button>`
       : "";
-    slot.innerHTML = modBtn + `<div class="acct"><button class="acct-link" title="Your profile" onclick="go('profile','me')"><span class="av">${initial}</span><span>${esc(account.email)}</span></button><button class="close-x" title="Sign out" style="font-size:16px" onclick="signOut()">⏻</button></div>`;
+    slot.innerHTML = modBtn + `<div class="acct"><button class="acct-link" title="Your profile" onclick="go('profile','me')"><span class="av">${initial}</span><span>${esc(account.displayName||"Your account")}</span></button><button class="close-x" title="Sign out" style="font-size:16px" aria-label="Sign out" onclick="signOut()">Sign out</button></div>`;
     if(account.isModerator) refreshModBadge();
   } else {
     slot.innerHTML=`<button class="btn ghost sm" onclick="openAuth()">Sign in</button>`;
@@ -392,16 +409,27 @@ async function refreshModBadge(){
 }
 
 /* ---------- modal plumbing ---------- */
-function openModal(html){ document.getElementById("modalMount").innerHTML=html; document.getElementById("overlay").classList.add("open"); }
-function closeModal(){ document.getElementById("overlay").classList.remove("open"); document.getElementById("modalMount").innerHTML=""; }
+let modalTrigger=null, authAfter=null;
+function openModal(html){
+  saveComplaintDraft();modalTrigger=document.activeElement;
+  document.getElementById("modalMount").innerHTML=html;
+  const modal=document.querySelector(".modal"); modal.setAttribute("role","dialog");modal.setAttribute("aria-modal","true");modal.tabIndex=-1;
+  const heading=modal.querySelector("h3");if(heading){heading.id=heading.id||"dialogTitle";modal.setAttribute("aria-labelledby",heading.id);}
+  document.getElementById("overlay").classList.add("open");
+  for(const el of document.querySelectorAll("header,footer,#app"))el.inert=true;
+  modal.focus();
+  modal.addEventListener("keydown",e=>{if(e.key==="Tab"){const els=[...modal.querySelectorAll('button:not([disabled]),input:not([disabled]),select,textarea,a[href]')].filter(el=>el.offsetParent!==null);const first=els[0],last=els.at(-1);if(e.shiftKey&&(document.activeElement===first||document.activeElement===modal)){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}}if(e.key==="Enter"&&e.target.matches("input")){e.preventDefault();modal.querySelector(".modal-foot .btn.accent")?.click();}});
+}
+function closeModal(){if(document.querySelector(".recovery-code")&&!confirm("Have you saved your recovery code? You will need it to reset your password."))return;saveComplaintDraft();document.getElementById("overlay").classList.remove("open");document.getElementById("modalMount").innerHTML="";for(const el of document.querySelectorAll("header,footer,#app"))el.inert=false;if(modalTrigger?.isConnected)modalTrigger.focus();}
 document.getElementById("overlay").addEventListener("click",e=>{ if(e.target.id==="overlay") closeModal(); });
 document.addEventListener("keydown",e=>{ if(e.key==="Escape") closeModal(); });
-function showErr(id,msg){ const el=document.getElementById(id); if(el){ el.textContent=msg; el.classList.add("show"); } }
+function showErr(id,msg){ const el=document.getElementById(id); if(el){ el.textContent=msg; el.setAttribute("role","alert");el.classList.add("show"); } }
 function hideErr(id){ const el=document.getElementById(id); if(el) el.classList.remove("show"); }
 
 /* ---------- auth (real: email + password, login/register) ---------- */
 let authMode="register";
-function openAuth(after){
+function openAuth(after,mode="login"){
+  authAfter=typeof after==="function"?after:null;
   openModal(`
     <div class="modal">
       <div class="modal-head">
@@ -419,38 +447,43 @@ function openAuth(after){
           <input id="authEmail" type="email" placeholder="you@example.com" value="${account?escAttr(account.email):""}" autocomplete="email">
         </div>
         <div class="field">
-          <label for="authPass">Password <span class="hint">— at least 6 characters, stored hashed (scrypt)</span></label>
+          <label for="authPass">Password <span class="hint" id="passHint"></span></label>
           <input id="authPass" type="password" placeholder="••••••••" autocomplete="current-password">
         </div>
-        <div class="form-note">Requiring a free account (rather than anonymous posting) is a deliberate choice: it cuts spam, lets submitters track replies, and keeps a light record trail that lowers false-complaint risk. This is a local prototype — the database lives on this machine only.</div>
+        <button class="link-btn" type="button" onclick="togglePassword('authPass',this)">Show password</button>
+        <div class="field" id="displayNameField"><label for="authName">Public display name</label><input id="authName" maxlength="40" autocomplete="nickname" placeholder="Choose a name, not your email"><span class="hint">Shown with your complaints and comments. Your email stays private.</span></div>
+        <button class="link-btn" onclick="openRecovery()">Forgot password?</button>
+        <p class="form-note">Your posts are public. You will receive a private recovery code when creating an account. Keep it somewhere safe.</p>
       </div>
       <div class="modal-foot">
         <div class="spacer"></div>
         <button class="btn ghost" onclick="closeModal()">Cancel</button>
-        <button class="btn accent" id="authSubmit" onclick="doAuth('${after||""}')">Create account</button>
+        <button class="btn accent" id="authSubmit" onclick="doAuth()">Create account</button>
       </div>
     </div>`);
-  authMode="register"; setAuthMode("register");
+  authMode=mode; setAuthMode(mode);
   setTimeout(()=>{const el=document.getElementById("authEmail"); if(el) el.focus();},60);
 }
 function setAuthMode(mode){
   authMode=mode; hideErr("authErr");
+  document.getElementById("displayNameField").hidden=mode!=="register";document.getElementById("passHint").textContent=mode==="register"?"— at least 6 characters":"";
   document.querySelectorAll(".auth-tabs button").forEach(b=>b.setAttribute("aria-selected", b.dataset.mode===mode?"true":"false"));
   document.getElementById("authTitle").textContent = mode==="register"?"Create your free account":"Welcome back";
   document.getElementById("authSubmit").textContent = mode==="register"?"Create account":"Sign in";
   const pass=document.getElementById("authPass"); if(pass) pass.setAttribute("autocomplete", mode==="register"?"new-password":"current-password");
 }
-async function doAuth(after){
+async function doAuth(){
   hideErr("authErr");
   const email=(document.getElementById("authEmail").value||"").trim();
   const password=document.getElementById("authPass").value||"";
   const btn=document.getElementById("authSubmit"); btn.disabled=true;
   try{
-    const data=await api("/api/auth/"+authMode,{method:"POST",body:{email,password}});
+    const data=await api("/api/auth/"+authMode,{method:"POST",body:{email,password,displayName:document.getElementById("authName").value}});
     account=data.user; renderChrome();
     toast(authMode==="register"?"You're in.":"Signed in.");
     closeModal();
-    openComplaintForm(after||"");
+    const resume=authAfter;authAfter=null;
+    if(data.recoveryCode)showRecoveryCode(data.recoveryCode,resume);else if(resume)resume();else render();
   }catch(e){ showErr("authErr",e.message); btn.disabled=false; }
 }
 async function signOut(){
@@ -460,10 +493,11 @@ async function signOut(){
 
 /* ---------- file a complaint ---------- */
 function startComplaint(slug,name,cat){
-  if(!account){ openAuth(slug||""); return; }
+  if(!account){ openAuth(()=>openComplaintForm(slug||"",name||"",cat||""),"register"); return; }
   openComplaintForm(slug||"", name||"", cat||"");
 }
 function openComplaintForm(slug,presetName,presetCat){
+  reviewedComplaint=null;
   const preset=presetName||"";
   const pcat=presetCat||"";
   openModal(`
@@ -475,43 +509,43 @@ function openComplaintForm(slug,presetName,presetCat){
       <div class="modal-body">
         <div class="form-err" id="cErr"></div>
         <div class="field">
-          <label for="fBiz">Business / tradesperson</label>
-          <input id="fBiz" type="text" placeholder="e.g. Brightpath Builders" value="${escAttr(preset)}">
+          <label for="fBiz">Business / tradesperson <span class="hint">Required</span></label>
+          <input id="fBiz" list="businessOptions" autocomplete="organization" maxlength="120" type="text" placeholder="e.g. Brightpath Builders" value="${escAttr(preset)}"><datalist id="businessOptions"></datalist><span class="hint">Choose an existing business when available. Check the name and location.</span>
         </div>
         <div class="field row2">
           <div class="field" style="gap:6px">
             <label for="fCat">Category</label>
-            <select id="fCat">${CATEGORIES.map(c=>`<option ${c===pcat?"selected":""}>${c}</option>`).join("")}</select>
+            <select id="fCat"><option value="">Choose a category</option>${CATEGORIES.map(c=>`<option ${c===pcat?"selected":""}>${c}</option>`).join("")}</select>
           </div>
           <div class="field" style="gap:6px">
             <label for="fLoc">Location</label>
-            <input id="fLoc" type="text" placeholder="Town / region">
+            <input id="fLoc" type="text" placeholder="e.g. Brisbane, QLD" maxlength="100">
           </div>
         </div>
         <div class="field">
-          <label>Severity <span class="hint">— how bad, on the zero-to-&minus;5 scale</span></label>
-          <div class="sev-pick" id="sevPick">
-            ${[1,2,3,4,5].map(n=>`<button type="button" data-sev="${n}" aria-pressed="${n===3?"true":"false"}"><span class="sn">&minus;${n}</span><span class="sl">${["minor","poor","serious","severe","egregious"][n-1]}</span></button>`).join("")}
-          </div>
+          <label>How serious was the issue? <span class="hint">Required · choose one</span></label>
+          <div class="sev-pick" id="sevPick" role="group" aria-label="Severity">
+            ${[1,2,3,4,5].map(n=>`<button type="button" data-sev="${n}" aria-pressed="${false?"true":"false"}"><span class="sn">&minus;${n}</span><span class="sl">${["Minor","Moderate","Serious","Severe","Very severe"][n-1]}</span></button>`).join("")}
+          </div><span class="hint">Minor: inconvenience. Moderate: repeated delays. Serious: significant cost or disruption. Severe: major loss. Very severe: lasting harm.</span>
         </div>
         <div class="field">
-          <label for="fTitle">Headline</label>
-          <input id="fTitle" type="text" placeholder="One line: what went wrong and how it was handled">
+          <label for="fTitle">Headline <span class="hint">Required</span></label>
+          <input id="fTitle" maxlength="180" type="text" placeholder="One line: what went wrong and how it was handled">
         </div>
         <div class="field">
-          <label for="fBody">What happened</label>
-          <textarea id="fBody" placeholder="Facts, dates, amounts. What you asked for and how the business responded (or didn't)."></textarea>
+          <label for="fBody">What happened <span class="hint">Required · at least 20 characters</span></label>
+          <textarea id="fBody" minlength="20" maxlength="10000" placeholder="Facts, dates, amounts. What you asked for and how the business responded (or didn't)."></textarea>
         </div>
         <div class="form-note">By filing you confirm this is a truthful, first-hand account. The business can respond publicly or ask moderators to review a disputed entry.</div>
       </div>
       <div class="modal-foot">
-        <span class="signed-as">Filing as ${account?esc(account.email):"—"}</span>
+        <span class="signed-as">Public name: ${account?esc(account.displayName||"Member"):"—"}</span>
         <div class="spacer"></div>
         <button class="btn ghost" onclick="closeModal()">Cancel</button>
-        <button class="btn accent" id="cSubmit" onclick="submitComplaint()">Put it on the record</button>
+        <button class="btn accent" id="cSubmit" onclick="reviewComplaint()">Review complaint</button>
       </div>
     </div>`);
-  let sev=3;
+  let sev=0;
   const pick=document.getElementById("sevPick");
   pick.addEventListener("click",e=>{
     const btn=e.target.closest("button[data-sev]"); if(!btn) return;
@@ -519,31 +553,41 @@ function openComplaintForm(slug,presetName,presetCat){
     pick.querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed", b===btn?"true":"false"));
   });
   window.__getSev=()=>sev;
+  restoreComplaintDraft(preset,pcat);
+  const draft=document.getElementById("fBiz");draft.addEventListener("input",lookupBusinesses);
+  draft.addEventListener("change",()=>{const option=[...document.querySelectorAll("#businessOptions option")].find(x=>x.value===draft.value);if(option){document.getElementById("fCat").value=option.dataset.cat;document.getElementById("fLoc").value=option.dataset.loc;}});
+  document.querySelector(".modal").addEventListener("input",saveComplaintDraft);
+  document.querySelector(".modal").addEventListener("click",()=>setTimeout(saveComplaintDraft,0));
+  document.querySelector(".modal-foot").insertAdjacentHTML("afterbegin",'<button class="link-btn" onclick="discardComplaintDraft()">Discard draft</button>');
+  const saved=readDraft();if(saved?.severity){sev=saved.severity;pick.querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",+b.dataset.sev===sev));}
+  lookupBusinesses();
   setTimeout(()=>{const el=document.getElementById("fBiz"); if(el&&!el.value) el.focus(); else {const t=document.getElementById("fTitle"); if(t) t.focus();}},60);
 }
+let reviewedComplaint=null;
 async function submitComplaint(){
   hideErr("cErr");
-  const payload={
+  const payload=reviewedComplaint||{
     business:(document.getElementById("fBiz").value||"").trim(),
     cat:document.getElementById("fCat").value,
     loc:(document.getElementById("fLoc").value||"").trim(),
-    severity:window.__getSev?window.__getSev():3,
+    severity:window.__getSev?window.__getSev():0,
     title:(document.getElementById("fTitle").value||"").trim(),
     body:(document.getElementById("fBody").value||"").trim()
   };
   const btn=document.getElementById("cSubmit"); btn.disabled=true;
   try{
     const data=await api("/api/complaints",{method:"POST",body:payload});
+    try{localStorage.removeItem("zs_complaint_draft");}catch{}reviewedComplaint=null;
     closeModal();
-    toast("On the record. They can't say they weren't told.",true);
+    openModal(`<div class="modal"><div class="modal-head"><h3>Complaint published</h3></div><div class="modal-body"><p>Your complaint is public. Save this reference: <strong>${esc(data.publicId)}</strong>.</p><a class="btn accent" href="${routeURL('complaint',data.publicId)}" onclick="event.preventDefault();closeModal();go('complaint','${data.publicId}')">View your complaint</a></div></div>`);
     filters.q=""; filters.cat="all"; filters.status="all"; filters.sort="recent";
-    go("business",data.slug);
+    go("complaint",data.publicId);
   }catch(e){ showErr("cErr",e.message); btn.disabled=false; }
 }
 
 /* ---------- right of reply ---------- */
 function openReply(publicId){
-  if(!account){ openAuth(); return; }
+  if(!account){ openAuth(()=>openReply(publicId)); return; }
   openModal(`
     <div class="modal">
       <div class="modal-head">
@@ -560,7 +604,7 @@ function openReply(publicId){
           <label for="rText">Your response</label>
           <textarea id="rText" placeholder="Acknowledge the issue and set out what you'll do about it."></textarea>
         </div>
-        <div class="form-note">In production, posting as a business would require verifying ownership of that listing. This prototype lets any signed-in user demonstrate the flow.</div>
+        <div class="form-note">This response will be public and labelled unverified. Signing in does not verify that you represent this business.</div>
       </div>
       <div class="modal-foot">
         <div class="spacer"></div>
@@ -577,14 +621,14 @@ async function submitReply(publicId){
   const btn=document.getElementById("rSubmit"); btn.disabled=true;
   try{
     await api("/api/complaints/"+encodeURIComponent(publicId)+"/reply",{method:"POST",body:{by,text}});
-    closeModal(); toast("Response posted — case marked answered.");
+    closeModal(); toast("Response posted. The complaint is not marked resolved.");
     render();
   }catch(e){ showErr("rErr",e.message); btn.disabled=false; }
 }
 
 /* ---------- dispute a complaint ---------- */
 function openDispute(publicId){
-  if(!account){ openAuth(); return; }
+  if(!account){ openAuth(()=>openDispute(publicId)); return; }
   openModal(`
     <div class="modal">
       <div class="modal-head">
@@ -687,7 +731,7 @@ function isDark(){
   if(attr) return attr==="dark";
   return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
-function toggleTheme(){ document.documentElement.setAttribute("data-theme", isDark()?"light":"dark"); renderChrome(); }
+function toggleTheme(){ const theme=isDark()?"light":"dark";document.documentElement.setAttribute("data-theme",theme);try{localStorage.setItem("zs_theme",theme);}catch{}renderChrome(); }
 document.getElementById("themeBtn").addEventListener("click",toggleTheme);
 function moonIcon(){return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>`;}
 function sunIcon(){return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M19.1 4.9l-1.8 1.8M6.7 17.3l-1.8 1.8"/></svg>`;}
@@ -704,5 +748,30 @@ function toast(msg,star){
 (async function(){
   try{ const me=await api("/api/auth/me"); account=me.user; }catch(e){}
   try{ const meta=await api("/api/meta"); if(Array.isArray(meta.disputeReasons)) DISPUTE_REASONS=meta.disputeReasons; }catch(e){}
-  render();
+  readRoute();render();
 })();
+
+/* Usability: local drafts contain only complaint text, never credentials. */
+function readDraft(){try{return JSON.parse(localStorage.getItem("zs_complaint_draft")||"null");}catch{return null;}}
+function saveComplaintDraft(){if(!document.getElementById("fBiz"))return;const d={};for(const [key,id] of Object.entries({business:"fBiz",cat:"fCat",loc:"fLoc",title:"fTitle",body:"fBody"}))d[key]=document.getElementById(id).value;d.severity=window.__getSev?.()||0;try{localStorage.setItem("zs_complaint_draft",JSON.stringify(d));}catch{}}
+function restoreComplaintDraft(name,cat){const d=readDraft();if(!d)return;for(const [key,id] of Object.entries({business:"fBiz",cat:"fCat",loc:"fLoc",title:"fTitle",body:"fBody"}))document.getElementById(id).value=d[key]||"";if(name)document.getElementById("fBiz").value=name;if(cat)document.getElementById("fCat").value=cat;}
+function discardComplaintDraft(){if(!confirm("Discard your saved complaint draft? This cannot be undone."))return;for(const id of ["fBiz","fCat","fLoc","fTitle","fBody"])document.getElementById(id).value="";try{localStorage.removeItem("zs_complaint_draft");}catch{}reviewedComplaint=null;closeModal();try{localStorage.removeItem("zs_complaint_draft");}catch{}}
+let lookupRequest=0;
+async function lookupBusinesses(){const request=++lookupRequest;const input=document.getElementById("fBiz");if(!input)return;try{const {businesses}=await api("/api/businesses?q="+encodeURIComponent(input.value));if(request!==lookupRequest||!document.getElementById("businessOptions"))return;document.getElementById("businessOptions").innerHTML=businesses.map(b=>`<option value="${escAttr(b.name)}" data-cat="${escAttr(b.cat)}" data-loc="${escAttr(b.loc)}">${esc(b.loc)}</option>`).join("");}catch{}}
+function fieldError(id,msg){const input=document.getElementById(id);input.setAttribute("aria-invalid","true");const error=document.createElement("span");error.className="field-error";error.id=id+"Error";error.textContent=msg;input.after(error);input.setAttribute("aria-describedby",error.id);input.focus();}
+function reviewComplaint(){
+ document.querySelectorAll(".field-error").forEach(e=>e.remove());document.querySelectorAll('[aria-invalid]').forEach(e=>e.removeAttribute('aria-invalid'));
+ const d={business:document.getElementById("fBiz").value.trim(),cat:document.getElementById("fCat").value,loc:document.getElementById("fLoc").value.trim(),severity:window.__getSev(),title:document.getElementById("fTitle").value.trim(),body:document.getElementById("fBody").value.trim()};
+ if(!d.business)return fieldError("fBiz","Enter a business or tradesperson name.");if(!d.cat)return fieldError("fCat","Choose a category.");if(!d.severity){showErr("cErr","Choose how serious the issue was.");document.querySelector("#sevPick button").focus();return;}if(!d.title)return fieldError("fTitle","Add a short headline.");if(d.body.length<20)return fieldError("fBody","Describe what happened in at least 20 characters.");
+ saveComplaintDraft();reviewedComplaint=d;
+ openModal(`<div class="modal"><div class="modal-head"><h3>Review before publishing</h3><button class="close-x" aria-label="Close review" onclick="closeModal()">×</button></div><div class="modal-body"><div class="form-err" id="cErr"></div><p>Your complaint, location and public name will be visible to everyone. Your email remains private.</p><dl><dt>Business</dt><dd>${esc(d.business)} · ${esc(d.loc||"Location not provided")}</dd><dt>Category and severity</dt><dd>${esc(d.cat)} · −${d.severity}</dd><dt>Public name</dt><dd>${esc(account.displayName||"Member")}</dd></dl><h4>${esc(d.title)}</h4><p class="complaint-text">${esc(d.body)}</p><p>Publish only truthful, first-hand experiences. Remove private contact, payment and sensitive personal details.</p><label class="confirmation"><input type="checkbox" id="publishConfirm"> I confirm this is my first-hand account and I have checked it for private information.</label></div><div class="modal-foot"><button class="btn ghost" onclick="openComplaintForm()">Back to edit</button><button class="btn accent" id="cSubmit" onclick="if(!document.getElementById('publishConfirm').checked){showErr('cErr','Confirm your account before publishing.');return;}submitComplaint()">Publish complaint</button></div></div>`);
+}
+function togglePassword(id,button){const input=document.getElementById(id);input.type=input.type==="password"?"text":"password";button.textContent=input.type==="password"?"Show password":"Hide password";}
+function showRecoveryCode(code,resume){openModal(`<div class="modal"><div class="modal-head"><h3>Save your private recovery code</h3></div><div class="modal-body"><p>This code can reset your password. Keep it in a password manager. Never share it or post it in a complaint.</p><code class="recovery-code">${esc(code)}</code><button class="btn ghost" id="saveRecovery">Download recovery code</button></div><div class="modal-foot"><button class="btn accent" id="continueRecovery">I saved it — continue</button></div></div>`);document.getElementById("saveRecovery").onclick=()=>{const url=URL.createObjectURL(new Blob(["Zero Stars recovery code\n"+code],{type:"text/plain"}));const a=document.createElement("a");a.href=url;a.download="zero-stars-recovery.txt";a.click();URL.revokeObjectURL(url);};document.getElementById("continueRecovery").onclick=()=>{document.querySelector(".recovery-code").classList.remove("recovery-code");closeModal();if(resume)resume();else render();};}
+function openRecovery(){openModal(`<div class="modal"><div class="modal-head"><h3>Reset your password</h3><button class="close-x" aria-label="Close" onclick="closeModal()">×</button></div><div class="modal-body"><p>Use the private recovery code you saved when creating your account. A successful reset signs out all existing sessions and gives you a new code.</p><div id="recoverErr" class="form-err"></div><div class="field"><label for="recoverEmail">Email</label><input id="recoverEmail" type="email" autocomplete="email"></div><div class="field"><label for="recoverCode">Recovery code</label><input id="recoverCode" autocomplete="off"></div><div class="field"><label for="recoverPass">New password · at least 6 characters</label><input id="recoverPass" type="password" autocomplete="new-password"></div><button class="link-btn" onclick="togglePassword('recoverPass',this)">Show password</button></div><div class="modal-foot"><button class="btn ghost" onclick="openAuth()">Back to sign in</button><button class="btn accent" id="recoverSubmit" onclick="resetPassword()">Reset password</button></div></div>`);}
+async function resetPassword(){const button=document.getElementById("recoverSubmit");button.disabled=true;try{const result=await api("/api/auth/recover",{method:"POST",body:{email:document.getElementById("recoverEmail").value,recoveryCode:document.getElementById("recoverCode").value,password:document.getElementById("recoverPass").value}});account=null;renderChrome();showRecoveryCode(result.recoveryCode,()=>openAuth());}catch(e){showErr("recoverErr",e.message);button.disabled=false;}}
+try{const theme=localStorage.getItem("zs_theme");if(["light","dark"].includes(theme))document.documentElement.setAttribute("data-theme",theme);}catch{}
+const motion=matchMedia("(prefers-reduced-motion: reduce)");function setLogoMotion(){const video=document.querySelector(".logo-vid");if(!video)return;if(motion.matches){video.pause();video.removeAttribute("autoplay");video.style.display="none";let img=document.querySelector(".static-logo");if(!img){img=document.createElement("img");img.className="static-logo";img.src="/logo.webp";img.alt="Zero Stars";video.before(img);}img.hidden=false;}else{video.style.display="";document.querySelector(".static-logo")?.setAttribute("hidden","");video.play().catch(()=>{});}}motion.addEventListener("change",setLogoMotion);setLogoMotion();
+
+function openAccountSettings(){openModal(`<div class="modal"><div class="modal-head"><h3>Account settings</h3><button class="close-x" aria-label="Close" onclick="closeModal()">×</button></div><div class="modal-body"><p>Choose a public name for future posts. Saving generates a new recovery code and invalidates your old one. Existing posts keep their published names.</p><div id="settingsErr" class="form-err"></div><div class="field"><label for="settingsName">Public display name</label><input id="settingsName" maxlength="40" value="${escAttr(account.displayName||"Member")}" autocomplete="nickname"></div><div class="field"><label for="settingsPass">Current password</label><input id="settingsPass" type="password" autocomplete="current-password"></div></div><div class="modal-foot"><button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn accent" id="settingsSave" onclick="saveAccountSettings()">Save settings</button></div></div>`);}
+async function saveAccountSettings(){const button=document.getElementById("settingsSave");button.disabled=true;try{const data=await api("/api/auth/settings",{method:"POST",body:{displayName:document.getElementById("settingsName").value,password:document.getElementById("settingsPass").value}});account=data.user;renderChrome();showRecoveryCode(data.recoveryCode,()=>render());}catch(e){showErr("settingsErr",e.message);button.disabled=false;}}
