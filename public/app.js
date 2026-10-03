@@ -86,11 +86,7 @@ async function viewHome(){
         <p class="hero-punch">Alone, we're a ticket they can close.<br><em>Together, we're a story they can't.</em></p>
         <div class="hero-actions"><button class="btn accent" onclick="startComplaint()">File a complaint</button><a class="btn ghost" href="#q">Search the register</a></div>
       </div>
-      <div class="hero-stats">${metaError?'<button class="btn ghost" onclick="render()">Retry statistics</button>':""}
-        <div class="hstat"><span class="n neg mono">${metaError?"Unavailable":meta.total?"−"+(meta.avgSeverity||0).toFixed(1):"—"}</span><span class="l">Register-wide average</span></div>
-        <div class="hstat"><span class="n">${metaError?"—":meta.total}</span><span class="l">Logged complaints</span></div>
-        <div class="hstat"><span class="n" style="color:var(--amber)">${metaError?"—":meta.unresolved}</span><span class="l">Still unresolved</span></div>
-      </div>
+      <aside class="permanent-shit-list" aria-labelledby="shitListTitle"><h2 id="shitListTitle">The shit list <span>Top 5</span></h2><p>Highest average complaint severity · all time</p><div id="permanentShitList" aria-live="polite">Loading rankings…</div><small>Based on published user reports, not independently verified findings. Fictional demo entries are labelled.</small></aside>
     </div>
   </section>
 
@@ -115,10 +111,10 @@ async function viewHome(){
         <option value="recent" ${filters.sort==="recent"?"selected":""}>Most recent</option>
         <option value="backed" ${filters.sort==="backed"?"selected":""}>Most backed</option>
         <option value="severe" ${filters.sort==="severe"?"selected":""}>Most severe</option>
-        <option value="shitlist" ${filters.sort==="shitlist"?"selected":""}>This week’s shit list</option>
+        <option value="shitlist" ${filters.sort==="shitlist"?"selected":""}>Shit list · all time</option>
         <option value="business" ${filters.sort==="business"?"selected":""}>By business</option>
       </select>
-      <button class="btn accent sm" onclick="openShitList()">Sort by shit list</button>
+      <button class="btn ghost sm" onclick="sortByShitList()">Sort by shit list</button>
       <button class="btn ghost sm" onclick="clearFilters()">Clear filters</button><span class="result-count" id="rcount" role="status" aria-live="polite"></span>
     </div>
   </section>
@@ -127,7 +123,6 @@ async function viewHome(){
 }
 
 function caseCard(c,opts={}){
-  const unheard = !["responded","resolved"].includes(c.status);
   return `
   <article class="case">
     <div class="case-top">
@@ -146,7 +141,7 @@ function caseCard(c,opts={}){
           <span class="sev-num">&minus;${c.sev}</span>
           <span class="sev-label">severity</span>
         </div>
-        ${unheard?'<span class="stamp">Unheard</span>':""}
+        ${companyMark(c)}
       </div>
     </div>
     <div class="chips">
@@ -299,7 +294,7 @@ function wireHome(){
   const cat=document.getElementById("cat"); if(cat) cat.onchange=e=>{filters.cat=e.target.value; refreshFeed();};
   const st=document.getElementById("status"); if(st) st.onchange=e=>{filters.status=e.target.value; refreshFeed();};
   const so=document.getElementById("sort"); if(so) so.onchange=e=>{filters.sort=e.target.value; refreshFeed();};
-  refreshFeed();
+  refreshFeed();loadPermanentShitList();
 }
 
 /* ---------- business dossier ---------- */
@@ -514,6 +509,7 @@ function openComplaintForm(slug,presetName,presetCat){
           <label for="fBiz">Business / tradesperson <span class="hint">Required</span></label>
           <input id="fBiz" list="businessOptions" autocomplete="organization" maxlength="120" type="text" placeholder="e.g. Brightpath Builders" value="${escAttr(preset)}"><datalist id="businessOptions"></datalist><span class="hint">Choose an existing business when available. Check the name and location.</span>
         </div>
+        <div class="field"><label for="fWebsite">Business website <span class="hint">Optional</span></label><input id="fWebsite" type="url" placeholder="https://www.business.com.au" autocomplete="url"><span class="hint">We scan the public homepage for a company logo. You can still publish if none is found.</span><button type="button" class="btn ghost sm" onclick="previewCompanyLogo()">Find company logo</button><div id="companyLogoPreview" role="status" aria-live="polite"></div></div>
         <div class="field row2">
           <div class="field" style="gap:6px">
             <label for="fCat">Category</label>
@@ -769,9 +765,9 @@ function toast(msg,star){
 
 /* Usability: local drafts contain only complaint text, never credentials. */
 function readDraft(){try{return JSON.parse(localStorage.getItem("zs_complaint_draft")||"null");}catch{return null;}}
-function saveComplaintDraft(){if(!document.getElementById("fBiz"))return;const d={};for(const [key,id] of Object.entries({business:"fBiz",cat:"fCat",loc:"fLoc",title:"fTitle",body:"fBody",service:"fService",incidentDate:"fIncidentDate",amount:"fAmount",contact:"fContact",contactNotes:"fContactNotes",outcome:"fOutcome"}))d[key]=document.getElementById(id).value;d.severity=window.__getSev?.()||0;try{localStorage.setItem("zs_complaint_draft",JSON.stringify(d));}catch{}}
-function restoreComplaintDraft(name,cat){const d=readDraft();if(!d)return;for(const [key,id] of Object.entries({business:"fBiz",cat:"fCat",loc:"fLoc",title:"fTitle",body:"fBody",service:"fService",incidentDate:"fIncidentDate",amount:"fAmount",contact:"fContact",contactNotes:"fContactNotes",outcome:"fOutcome"}))document.getElementById(id).value=d[key]||"";if(name)document.getElementById("fBiz").value=name;if(cat)document.getElementById("fCat").value=cat;}
-function discardComplaintDraft(){if(!confirm("Discard your saved complaint draft? This cannot be undone."))return;for(const id of ["fBiz","fCat","fLoc","fTitle","fBody","fService","fIncidentDate","fAmount","fContact","fContactNotes","fOutcome"])document.getElementById(id).value="";try{localStorage.removeItem("zs_complaint_draft");}catch{}reviewedComplaint=null;closeModal();try{localStorage.removeItem("zs_complaint_draft");}catch{}}
+function saveComplaintDraft(){if(!document.getElementById("fBiz"))return;const d={};for(const [key,id] of Object.entries({business:"fBiz",cat:"fCat",loc:"fLoc",title:"fTitle",body:"fBody",service:"fService",incidentDate:"fIncidentDate",amount:"fAmount",contact:"fContact",contactNotes:"fContactNotes",outcome:"fOutcome",website:"fWebsite"}))d[key]=document.getElementById(id).value;d.severity=window.__getSev?.()||0;try{localStorage.setItem("zs_complaint_draft",JSON.stringify(d));}catch{}}
+function restoreComplaintDraft(name,cat){const d=readDraft();if(!d)return;for(const [key,id] of Object.entries({business:"fBiz",cat:"fCat",loc:"fLoc",title:"fTitle",body:"fBody",service:"fService",incidentDate:"fIncidentDate",amount:"fAmount",contact:"fContact",contactNotes:"fContactNotes",outcome:"fOutcome",website:"fWebsite"}))document.getElementById(id).value=d[key]||"";if(name)document.getElementById("fBiz").value=name;if(cat)document.getElementById("fCat").value=cat;}
+function discardComplaintDraft(){if(!confirm("Discard your saved complaint draft? This cannot be undone."))return;for(const id of ["fBiz","fCat","fLoc","fTitle","fBody","fService","fIncidentDate","fAmount","fContact","fContactNotes","fOutcome","fWebsite"])document.getElementById(id).value="";try{localStorage.removeItem("zs_complaint_draft");}catch{}reviewedComplaint=null;closeModal();try{localStorage.removeItem("zs_complaint_draft");}catch{}}
 let lookupRequest=0;
 async function lookupBusinesses(){const request=++lookupRequest;const input=document.getElementById("fBiz");if(!input)return;try{const {businesses}=await api("/api/businesses?q="+encodeURIComponent(input.value));if(request!==lookupRequest||!document.getElementById("businessOptions"))return;document.getElementById("businessOptions").innerHTML=businesses.map(b=>`<option value="${escAttr(b.name)}" data-cat="${escAttr(b.cat)}" data-loc="${escAttr(b.loc)}">${esc(b.loc)}</option>`).join("");}catch{}}
 function fieldError(id,msg){const input=document.getElementById(id);input.setAttribute("aria-invalid","true");const error=document.createElement("span");error.className="field-error";error.id=id+"Error";error.textContent=msg;input.after(error);input.setAttribute("aria-describedby",error.id);input.focus();}
@@ -780,6 +776,7 @@ function reviewComplaint(){
  const d={business:document.getElementById("fBiz").value.trim(),cat:document.getElementById("fCat").value,loc:document.getElementById("fLoc").value.trim(),severity:window.__getSev(),title:document.getElementById("fTitle").value.trim(),body:document.getElementById("fBody").value.trim()};
  if(!d.business)return fieldError("fBiz","Enter a business or tradesperson name.");if(!d.cat)return fieldError("fCat","Choose a category.");if(!d.severity){showErr("cErr","Choose how serious the issue was.");document.querySelector("#sevPick button").focus();return;}if(!d.title)return fieldError("fTitle","Add a short headline.");if(d.body.length<20)return fieldError("fBody","Describe what happened in at least 20 characters.");
  const value=id=>document.getElementById(id).value.trim();
+ try{d.website=normalizeClientWebsite(value("fWebsite"));}catch{return fieldError("fWebsite","Enter a public HTTPS website, e.g. https://business.com.au.");}
  if(!value("fService"))return fieldError("fService","Name the product or service involved.");
  if(!value("fContact"))return fieldError("fContact","Tell us whether you contacted the business.");
  if(!value("fOutcome"))return fieldError("fOutcome","Tell us what would resolve the issue.");
@@ -789,7 +786,7 @@ function reviewComplaint(){
  d.body=details.join("\n")+"\n\nWhat happened\n"+d.body+"\n\nResolution wanted\n"+value("fOutcome");
  if(d.body.length>10000)return fieldError("fBody","Please shorten the complaint; all details together must fit within 10,000 characters.");
  reviewedComplaint=d;
- openModal(`<div class="modal"><div class="modal-head"><h3>Review before publishing</h3><button class="close-x" aria-label="Close review" onclick="closeModal()">×</button></div><div class="modal-body"><div class="form-err" id="cErr"></div><p>Your complaint, location and public name will be visible to everyone. Your email remains private.</p><dl><dt>Business</dt><dd>${esc(d.business)} · ${esc(d.loc||"Location not provided")}</dd><dt>Category and severity</dt><dd>${esc(d.cat)} · −${d.severity}</dd><dt>Public name</dt><dd>${esc(account.displayName||"Member")}</dd></dl><h4>${esc(d.title)}</h4><p class="complaint-text">${esc(d.body)}</p><p>Publish only truthful, first-hand experiences. Remove private contact, payment and sensitive personal details.</p><label class="confirmation"><input type="checkbox" id="publishConfirm"> I confirm this is my first-hand account and I have checked it for private information.</label></div><div class="modal-foot"><button class="btn ghost" onclick="openComplaintForm()">Back to edit</button><button class="btn accent" id="cSubmit" onclick="if(!document.getElementById('publishConfirm').checked){showErr('cErr','Confirm your account before publishing.');return;}submitComplaint()">Publish complaint</button></div></div>`);
+ openModal(`<div class="modal"><div class="modal-head"><h3>Review before publishing</h3><button class="close-x" aria-label="Close review" onclick="closeModal()">×</button></div><div class="modal-body"><div class="form-err" id="cErr"></div><p>Your complaint, location and public name will be visible to everyone. Your email remains private.</p><dl><dt>Business</dt><dd>${esc(d.business)} · ${esc(d.loc||"Location not provided")}</dd><dt>Category and severity</dt><dd>${esc(d.cat)} · −${d.severity}</dd><dt>Public name</dt><dd>${esc(account.displayName||"Member")}</dd>${d.website?`<dt>Business website</dt><dd>${esc(d.website)}</dd>`:""}</dl><h4>${esc(d.title)}</h4><p class="complaint-text">${esc(d.body)}</p><p>Publish only truthful, first-hand experiences. Remove private contact, payment and sensitive personal details.</p><label class="confirmation"><input type="checkbox" id="publishConfirm"> I confirm this is my first-hand account and I have checked it for private information.</label></div><div class="modal-foot"><button class="btn ghost" onclick="openComplaintForm()">Back to edit</button><button class="btn accent" id="cSubmit" onclick="if(!document.getElementById('publishConfirm').checked){showErr('cErr','Confirm your account before publishing.');return;}submitComplaint()">Publish complaint</button></div></div>`);
 }
 function togglePassword(id,button){const input=document.getElementById(id);input.type=input.type==="password"?"text":"password";button.textContent=input.type==="password"?"Show password":"Hide password";}
 function showRecoveryCode(code,resume){openModal(`<div class="modal"><div class="modal-head"><h3>Save your private recovery code</h3></div><div class="modal-body"><p>This code can reset your password. Keep it in a password manager. Never share it or post it in a complaint.</p><code class="recovery-code">${esc(code)}</code><button class="btn ghost" id="saveRecovery">Download recovery code</button></div><div class="modal-foot"><button class="btn accent" id="continueRecovery">I saved it — continue</button></div></div>`);document.getElementById("saveRecovery").onclick=()=>{const url=URL.createObjectURL(new Blob(["Zero Stars recovery code\n"+code],{type:"text/plain"}));const a=document.createElement("a");a.href=url;a.download="zero-stars-recovery.txt";a.click();URL.revokeObjectURL(url);};document.getElementById("continueRecovery").onclick=()=>{document.querySelector(".recovery-code").classList.remove("recovery-code");closeModal();if(resume)resume();else render();};}
@@ -801,11 +798,8 @@ const motion=matchMedia("(prefers-reduced-motion: reduce)");function setLogoMoti
 function openAccountSettings(){openModal(`<div class="modal"><div class="modal-head"><h3>Account settings</h3><button class="close-x" aria-label="Close" onclick="closeModal()">×</button></div><div class="modal-body"><p>Choose a public name for future posts. Saving generates a new recovery code and invalidates your old one. Existing posts keep their published names.</p><div id="settingsErr" class="form-err"></div><div class="field"><label for="settingsName">Public display name</label><input id="settingsName" maxlength="40" value="${escAttr(account.displayName||"Member")}" autocomplete="nickname"></div><div class="field"><label for="settingsPass">Current password</label><input id="settingsPass" type="password" autocomplete="current-password"></div></div><div class="modal-foot"><button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn accent" id="settingsSave" onclick="saveAccountSettings()">Save settings</button></div></div>`);}
 async function saveAccountSettings(){const button=document.getElementById("settingsSave");button.disabled=true;try{const data=await api("/api/auth/settings",{method:"POST",body:{displayName:document.getElementById("settingsName").value,password:document.getElementById("settingsPass").value}});account=data.user;renderChrome();showRecoveryCode(data.recoveryCode,()=>render());}catch(e){showErr("settingsErr",e.message);button.disabled=false;}}
 
-async function openShitList(){
- filters.sort="shitlist";const sort=document.getElementById("sort");if(sort)sort.value="shitlist";refreshFeed();
- openModal(`<div class="modal shit-list"><div class="modal-head"><h3>This week’s shit list</h3><button class="close-x" aria-label="Close" onclick="closeModal()">×</button></div><div class="modal-body" id="shitListContent" aria-live="polite">Loading this week’s rankings…</div></div>`);
- const mount=document.getElementById("shitListContent");
- try{const data=await api("/api/shit-list");if(!mount.isConnected)return;
- mount.innerHTML=`<p>Week beginning ${esc(data.week)} · Brisbane time.</p><p class="ranking-basis">Ranked by average severity of published complaints filed this week, then complaint count. These are user reports, not independently verified findings. Entries labelled fictional are demo submissions.</p>${data.businesses.length?`<ol class="weekly-ranking">${data.businesses.map(b=>`<li><span class="rank-number">#${b.rank}</span><div><a class="biz-link" href="${routeURL('business',b.slug)}" onclick="event.preventDefault();closeModal();go('business','${b.slug}')">${esc(b.name)}</a><p>${esc(b.loc)} · ${b.count} complaint${b.count===1?'':'s'}</p></div><strong class="rank-score" aria-label="Average severity minus ${b.average.toFixed(1)}">−${b.average.toFixed(1)}</strong></li>`).join('')}</ol>`:'<p>No complaints have been filed this week. Businesses will appear here as reports arrive.</p>'}`;
- }catch(e){if(mount.isConnected)mount.innerHTML='<p>'+esc(e.message)+'</p><button class="btn ghost" onclick="openShitList()">Retry</button>';}
-}
+function companyMark(c){return `<div class="company-mark">${c.logoUrl?`<img src="${escAttr(c.logoUrl)}" alt="${escAttr(c.bizName)} logo" loading="lazy" referrerpolicy="no-referrer" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><span class="company-initials" hidden aria-label="Logo unavailable">${esc(c.bizName.slice(0,2).toUpperCase())}</span>`:`<span class="company-initials" aria-label="No logo available">${esc(c.bizName.slice(0,2).toUpperCase())}</span>`}${c.status!=="resolved"?'<span class="stamp not-listening">NOT LISTENING</span>':'<span class="resolved-mark">Resolved</span>'}</div>${c.website?`<a class="company-website" href="${escAttr(c.website)}" target="_blank" rel="noopener noreferrer">Company website ↗</a>`:""}`;}
+function normalizeClientWebsite(value){if(!value)return '';const u=new URL(value.includes('://')?value:'https://'+value);if(u.protocol!=='https:'||u.username||u.password)throw Error('Invalid website');return u.href;}
+async function previewCompanyLogo(){const el=document.getElementById('companyLogoPreview'),input=document.getElementById('fWebsite');let website;try{website=normalizeClientWebsite(input.value);}catch{el.textContent='Enter a valid HTTPS website.';return;}if(!website){el.textContent='Enter the business website first.';return;}input.value=website;saveComplaintDraft();el.textContent='Finding the company logo…';try{const data=await api('/api/website-logo',{method:'POST',body:{website}});if(!el.isConnected)return;el.innerHTML=data.logoUrl?`<img class="logo-preview" src="${escAttr(data.logoUrl)}" alt="Discovered company logo" referrerpolicy="no-referrer" onerror="this.hidden=true;this.parentElement.textContent='Logo could not be displayed. You can still publish.'"><p>Logo found. Unresolved complaints display a NOT LISTENING stamp over it.</p>`:'No logo found. We will show company initials instead; this does not stop publication.';}catch(e){el.textContent=e.message;}}
+function sortByShitList(){filters.sort='shitlist';document.getElementById('sort').value='shitlist';refreshFeed();document.getElementById('feed').scrollIntoView({block:'start'});}
+async function loadPermanentShitList(){const el=document.getElementById('permanentShitList');if(!el)return;try{const data=await api('/api/shit-list');if(!el.isConnected)return;el.innerHTML=data.businesses.length?`<ol class="weekly-ranking">${data.businesses.map(b=>`<li><span class="rank-number">#${b.rank}</span><div><a class="biz-link" href="${routeURL('business',b.slug)}" onclick="event.preventDefault();go('business','${b.slug}')">${esc(b.name)}</a><p>${b.count} complaint${b.count===1?'':'s'}</p></div><strong class="rank-score">−${b.average.toFixed(1)}</strong></li>`).join('')}</ol>`:'<p>No published complaints yet.</p>';}catch(e){if(el.isConnected)el.innerHTML='<p>Could not load rankings.</p><button class="btn ghost" onclick="loadPermanentShitList()">Retry</button>';}}

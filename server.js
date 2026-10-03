@@ -1,5 +1,6 @@
 // Zero Stars — full-stack prototype server (Express + node:sqlite)
 import express from "express";
+import { discoverLogo, normalizeWebsite } from "./logo-discovery.js";
 import crypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -102,6 +103,8 @@ async function shapeComplaint(row, userId = null) {
     disputeReason: openDispute ? openDispute.reason : null,
     title: row.title,
     body: row.body,
+    website:row.website||"",
+    logoUrl:row.logo_url||"",
     author: row.author_label,
     authorId: row.user_id || null,
     date: (row.created_at || "").slice(0, 10),
@@ -198,27 +201,19 @@ app.get("/api/auth/me", asyncHandler(async (req, res) => {
 }));
 
 /* ---------- API: complaints ---------- */
-// Brisbane calendar weeks run Monday 00:00 through the following Monday.
-function currentWeek(now=new Date()) {
- const local=new Date(now.getTime()+10*3600000);
- const monday=Date.UTC(local.getUTCFullYear(),local.getUTCMonth(),local.getUTCDate()-((local.getUTCDay()+6)%7));
- const timestamp=ms=>new Date(ms).toISOString().slice(0,19).replace("T"," ");
- return {start:timestamp(monday-10*3600000),end:timestamp(monday+7*86400000-10*3600000),label:new Date(monday).toLocaleDateString("en-AU",{day:"numeric",month:"short",year:"numeric",timeZone:"UTC"})};
-}
 function rankBusinesses(rows){
  const groups=new Map();for(const row of rows){const item=groups.get(row.slug)||{slug:row.slug,name:row.name,loc:row.loc,count:0,sum:0};item.count++;item.sum+=row.severity;groups.set(row.slug,item);}
  return [...groups.values()].map(({sum,...item})=>({...item,average:sum/item.count})).sort((a,b)=>b.average-a.average||b.count-a.count||a.name.localeCompare(b.name)).map((item,index)=>({...item,rank:index+1}));
 }
 app.get("/api/shit-list",asyncHandler(async(req,res)=>{
- const week=currentWeek();const rows=await db.prepare(COMPLAINT_SELECT+" WHERE c.mod_state != 'removed' AND c.created_at >= ? AND c.created_at < ?").all(week.start,week.end);
- res.json({week:week.label,timeZone:"Australia/Brisbane",businesses:rankBusinesses(rows)});
+ const rows=await db.prepare(COMPLAINT_SELECT+" WHERE c.mod_state != 'removed'").all();
+ res.json({period:"All time",businesses:rankBusinesses(rows).slice(0,5)});
 }));
 app.get("/api/complaints", asyncHandler(async (req, res) => {
   const me = (await currentUser(req));
   const { q = "", cat = "all", status = "all", sort = "recent" } = req.query;
   // Public listing hides moderator-removed complaints.
-  const week=currentWeek();
-  const source=sort==="shitlist"?await db.prepare(COMPLAINT_SELECT+" WHERE c.mod_state != 'removed' AND c.created_at >= ? AND c.created_at < ?").all(week.start,week.end):await db.prepare(COMPLAINT_SELECT+" WHERE c.mod_state != 'removed'").all();
+  const source=await db.prepare(COMPLAINT_SELECT+" WHERE c.mod_state != 'removed'").all();
   const ranking=new Map(rankBusinesses(source).map(item=>[item.slug,item.rank]));
   let rows=await Promise.all(source.map(r=>shapeComplaint(r,me&&me.id)));
   if (cat !== "all") rows = rows.filter(c => c.cat === cat);
@@ -237,6 +232,9 @@ app.get("/api/complaints", asyncHandler(async (req, res) => {
   res.json({ complaints: rows.slice(0,limit),total });
 }));
 
+app.post("/api/website-logo",limitAuth,asyncHandler(requireAuth),asyncHandler(async(req,res)=>{
+ try{res.json(await discoverLogo(req.body.website));}catch{return res.status(400).json({error:"Enter a public HTTPS business website."});}
+}));
 app.get("/api/businesses",asyncHandler(async(req,res)=>{
  const q=String(req.query.q||"").trim().toLowerCase();
  const businesses=await db.prepare("SELECT slug,name,cat,loc FROM businesses WHERE LOWER(name) LIKE ? ORDER BY name LIMIT 12").all("%"+q+"%");res.json({businesses});
@@ -257,6 +255,8 @@ app.post("/api/complaints", asyncHandler(requireAuth), asyncHandler(async (req, 
   if (!title) return res.status(400).json({ error: "Add a short headline." });
   if (body.length < 20) return res.status(400).json({ error: "Describe what happened in at least 20 characters." });
 
+  let website="",logoUrl="";
+  try{website=normalizeWebsite(req.body.website);if(website)({logoUrl}=await discoverLogo(website));}catch{return res.status(400).json({error:"Enter a public HTTPS business website."});}
   const slug = bizName.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "business";
   let biz = (await db.prepare("SELECT * FROM businesses WHERE slug = ?").get(slug));
   if (!biz) {
@@ -266,8 +266,8 @@ app.post("/api/complaints", asyncHandler(requireAuth), asyncHandler(async (req, 
   }
   const publicId = "ZS-" + crypto.randomUUID();
   const authorLabel = req.user.display_name || "Member";
-  (await db.prepare(`INSERT INTO complaints (public_id,business_id,user_id,cat,severity,status,title,body,author_label)
-    VALUES (?,?,?,?,?,?,?,?,?)`).run(publicId, biz.id, req.user.id, cat, sev, "unresolved", title, body, authorLabel));
+  (await db.prepare(`INSERT INTO complaints (public_id,business_id,user_id,cat,severity,status,title,body,author_label,website,logo_url)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(publicId, biz.id, req.user.id, cat, sev, "unresolved", title, body, authorLabel,website,logoUrl));
   res.json({ ok: true, slug, publicId });
 }));
 

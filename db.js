@@ -154,6 +154,8 @@ export async function migrate() {
   (await ensureColumn("users", "is_moderator", "INTEGER NOT NULL DEFAULT 0"));
   await ensureColumn("users", "display_name", "TEXT NOT NULL DEFAULT 'Member'");
   await ensureColumn("users", "recovery_hash", "TEXT");
+  await ensureColumn("complaints", "website", "TEXT NOT NULL DEFAULT ''");
+  await ensureColumn("complaints", "logo_url", "TEXT NOT NULL DEFAULT ''");
   (await ensureColumn("complaints", "mod_state", "TEXT NOT NULL DEFAULT 'published'")); // published | disputed | removed
 }
 

@@ -3,14 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Zero Stars — complaints-only public register (full-stack prototype)",
+  "description": "Zero Stars \u2014 complaints-only public register (full-stack prototype)",
   "engines": {
     "node": "24.x"
   },
   "scripts": {
     "start": "node --no-warnings server.js",
     "seed": "node --no-warnings db.js --reseed",
-    "check": "node --check server.js && node --check db.js && node --check database.js && node --check api/index.js && node --check public/app.js",
+    "check": "node --check server.js && node --check logo-discovery.js && node --check db.js && node --check database.js && node --check api/index.js && node --check public/app.js",
     "test": "node --no-warnings --test --test-concurrency=1",
     "db:setup": "node --no-warnings db.js",
     "db:demo": "node --no-warnings db.js --demo"
