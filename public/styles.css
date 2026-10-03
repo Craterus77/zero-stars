@@ -424,3 +424,5 @@ body,input,textarea,select,.mono,code{font-family:"Inter",Arial,sans-serif}
 .case-side{width:148px}.company-mark{flex-shrink:0}
 @media(max-width:820px){.case-side{width:auto;flex-wrap:wrap;gap:12px}.company-website{flex-basis:100%;text-align:right}}
 @media(max-width:620px){.company-mark{width:130px}.company-mark img{max-width:112px}}
+
+.stamp.heard{color:var(--teal);border-color:var(--teal);font-size:18px;letter-spacing:.12em}

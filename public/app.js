@@ -31,7 +31,7 @@ function starRow(sev,size){ let h=""; for(let i=1;i<=5;i++) h+=starSVG(i<=sev,si
 function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
 function escAttr(s){ return esc(s); }
 function fmtDate(iso){ try{const d=new Date(iso+"T00:00:00"); return d.toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"});}catch(e){return iso;} }
-function statusLabel(s){ return ({responded:"Business responded", resolved:"Resolved", ignored:"No response", unresolved:"Unresolved"})[s] || "Unresolved"; }
+function statusLabel(s){ return ({responded:"Business responded", resolved:"Resolved satisfactorily", ignored:"No response", unresolved:"Unresolved"})[s] || "Unresolved"; }
 
 /* ---------- router ---------- */
 function routeURL(name,arg){ return name==="home" ? "/" : "/"+name+"/"+encodeURIComponent(arg||""); }
@@ -104,7 +104,7 @@ async function viewHome(){
         <option value="all">Any status</option>
         <option value="unresolved" ${filters.status==="unresolved"?"selected":""}>Unresolved</option>
         <option value="ignored" ${filters.status==="ignored"?"selected":""}>Ignored / stonewalled</option>
-        <option value="resolved" ${filters.status==="resolved"?"selected":""}>Resolved</option>
+        <option value="resolved" ${filters.status==="resolved"?"selected":""}>Resolved satisfactorily</option>
         <option value="responded" ${filters.status==="responded"?"selected":""}>Business responded</option>
       </select>
       <select aria-label="Sort complaints" class="filter" id="sort">
@@ -154,7 +154,7 @@ function caseCard(c,opts={}){
     <div class="case-foot">
       <span>Filed ${fmtDate(c.date)}</span><span class="dot"></span>
       ${c.authorId?`<button class="author-link" onclick="go('profile',${c.authorId})">${esc(c.author||"Registered submitter")}</button>`:`<span>${esc(c.author||"Registered submitter")}</span>`}
-      ${c.reply?'<span class="reply-flag">✓ Response posted · unverified</span>':'<span class="reply-flag" style="color:var(--amber)">Awaiting business response</span>'}
+      ${c.status==='resolved'?'<span class="reply-flag">✓ Resolved satisfactorily</span>':c.reply?'<span class="reply-flag">✓ Response posted · unverified</span>':'<span class="reply-flag" style="color:var(--amber)">Awaiting business response</span>'}
     </div>
     <div class="engage">
       <button data-vote="${c.id}" class="vote ${c.votedByMe?"on":""}" onclick="toggleVote('${c.id}',this)" aria-pressed="${c.votedByMe?"true":"false"}" title="Show support for this complaint; this is not a rating">
@@ -174,6 +174,7 @@ function replyBlock(r){
 }
 function cardActions(c,opts={}){
   const buttons=[];
+  if(account && c.authorId===account.id) buttons.push(`<button class="btn ghost sm" onclick="editComplaint('${c.id}')">Edit this post</button>`);
   if(opts.showRespond && !c.reply && c.modState!=="removed")
     buttons.push(`<button class="act respond" onclick="openReply('${c.id}')">↩ Respond as the business</button>`);
   if(account && c.modState==="published")
@@ -798,8 +799,26 @@ const motion=matchMedia("(prefers-reduced-motion: reduce)");function setLogoMoti
 function openAccountSettings(){openModal(`<div class="modal"><div class="modal-head"><h3>Account settings</h3><button class="close-x" aria-label="Close" onclick="closeModal()">×</button></div><div class="modal-body"><p>Choose a public name for future posts. Saving generates a new recovery code and invalidates your old one. Existing posts keep their published names.</p><div id="settingsErr" class="form-err"></div><div class="field"><label for="settingsName">Public display name</label><input id="settingsName" maxlength="40" value="${escAttr(account.displayName||"Member")}" autocomplete="nickname"></div><div class="field"><label for="settingsPass">Current password</label><input id="settingsPass" type="password" autocomplete="current-password"></div></div><div class="modal-foot"><button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn accent" id="settingsSave" onclick="saveAccountSettings()">Save settings</button></div></div>`);}
 async function saveAccountSettings(){const button=document.getElementById("settingsSave");button.disabled=true;try{const data=await api("/api/auth/settings",{method:"POST",body:{displayName:document.getElementById("settingsName").value,password:document.getElementById("settingsPass").value}});account=data.user;renderChrome();showRecoveryCode(data.recoveryCode,()=>render());}catch(e){showErr("settingsErr",e.message);button.disabled=false;}}
 
-function companyMark(c){return `<div class="company-mark">${c.logoUrl?`<img src="${escAttr(c.logoUrl)}" alt="${escAttr(c.bizName)} logo" loading="lazy" referrerpolicy="no-referrer" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><span class="company-initials" hidden aria-label="Logo unavailable">${esc(c.bizName.slice(0,2).toUpperCase())}</span>`:`<span class="company-initials" aria-label="No logo available">${esc(c.bizName.slice(0,2).toUpperCase())}</span>`}${c.status!=="resolved"?'<span class="stamp not-listening">NOT LISTENING</span>':'<span class="resolved-mark">Resolved</span>'}</div>${c.website?`<a class="company-website" href="${escAttr(c.website)}" target="_blank" rel="noopener noreferrer">Company website ↗</a>`:""}`;}
+function companyMark(c){return `<div class="company-mark">${c.logoUrl?`<img src="${escAttr(c.logoUrl)}" alt="${escAttr(c.bizName)} logo" loading="lazy" referrerpolicy="no-referrer" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><span class="company-initials" hidden aria-label="Logo unavailable">${esc(c.bizName.slice(0,2).toUpperCase())}</span>`:`<span class="company-initials" aria-label="No logo available">${esc(c.bizName.slice(0,2).toUpperCase())}</span>`}${c.status!=="resolved"?'<span class="stamp not-listening">NOT LISTENING</span>':'<span class="stamp not-listening heard">HEARD</span>'}</div>${c.website?`<a class="company-website" href="${escAttr(c.website)}" target="_blank" rel="noopener noreferrer">Company website ↗</a>`:""}`;}
 function normalizeClientWebsite(value){if(!value)return '';const u=new URL(value.includes('://')?value:'https://'+value);if(u.protocol!=='https:'||u.username||u.password)throw Error('Invalid website');return u.href;}
 async function previewCompanyLogo(){const el=document.getElementById('companyLogoPreview'),input=document.getElementById('fWebsite');let website;try{website=normalizeClientWebsite(input.value);}catch{el.textContent='Enter a valid HTTPS website.';return;}if(!website){el.textContent='Enter the business website first.';return;}input.value=website;saveComplaintDraft();el.textContent='Finding the company logo…';try{const data=await api('/api/website-logo',{method:'POST',body:{website}});if(!el.isConnected)return;el.innerHTML=data.logoUrl?`<img class="logo-preview" src="${escAttr(data.logoUrl)}" alt="Discovered company logo" referrerpolicy="no-referrer" onerror="this.hidden=true;this.parentElement.textContent='Logo could not be displayed. You can still publish.'"><p>Logo found. Unresolved complaints display a NOT LISTENING stamp over it.</p>`:'No logo found. We will show company initials instead; this does not stop publication.';}catch(e){el.textContent=e.message;}}
 function sortByShitList(){filters.sort='shitlist';document.getElementById('sort').value='shitlist';refreshFeed();document.getElementById('feed').scrollIntoView({block:'start'});}
 async function loadPermanentShitList(){const el=document.getElementById('permanentShitList');if(!el)return;try{const data=await api('/api/shit-list');if(!el.isConnected)return;el.innerHTML=data.businesses.length?`<ol class="weekly-ranking">${data.businesses.map(b=>`<li><span class="rank-number">#${b.rank}</span><div><a class="biz-link" href="${routeURL('business',b.slug)}" onclick="event.preventDefault();go('business','${b.slug}')">${esc(b.name)}</a><p>${b.count} complaint${b.count===1?'':'s'}</p></div><strong class="rank-score">−${b.average.toFixed(1)}</strong></li>`).join('')}</ol>`:'<p>No published complaints yet.</p>';}catch(e){if(el.isConnected)el.innerHTML='<p>Could not load rankings.</p><button class="btn ghost" onclick="loadPermanentShitList()">Retry</button>';}}
+
+async function editComplaint(id){
+ try{const {complaint:c}=await api('/api/complaints/'+encodeURIComponent(id));if(!account||c.authorId!==account.id)return;
+ openModal(`<div class="modal"><div class="modal-head"><h3>Edit this post</h3><button class="close-x" onclick="closeModal()" aria-label="Close">×</button></div><div class="modal-body">
+ <p>${esc(c.bizName)} · Update your account of what happened and its current status.</p>
+ <div class="field"><label for="eTitle">Headline</label><input id="eTitle" maxlength="180" value="${escAttr(c.title)}"></div>
+ <div class="field"><label for="eBody">Complaint details</label><textarea id="eBody" rows="12" maxlength="10000">${esc(c.body)}</textarea></div>
+ <div class="field"><label for="eCat">Category</label><select id="eCat">${CATEGORIES.map(cat=>`<option ${cat===c.cat?'selected':''}>${esc(cat)}</option>`).join('')}</select></div>
+ <div class="field"><label for="eSeverity">Severity</label><select id="eSeverity">${[1,2,3,4,5].map(n=>`<option value="${n}" ${n===c.sev?'selected':''}>−${n}</option>`).join('')}</select></div>
+ <div class="field"><label for="eWebsite">Business website (optional)</label><input id="eWebsite" type="url" value="${escAttr(c.website||'')}"></div>
+ <div class="field"><label for="eStatus">Complaint status</label><select id="eStatus">${['unresolved','ignored','responded','resolved'].map(status=>`<option value="${status}" ${status===c.status?'selected':''}>${statusLabel(status)}</option>`).join('')}</select><span class="hint">Choose “Resolved satisfactorily” when you are happy with the outcome. The company stamp will change to HEARD.</span></div>
+ <p class="form-err" id="editError" role="alert"></p></div><div class="modal-foot"><button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn accent" id="editSave" onclick="saveComplaintEdit('${c.id}')">Save changes</button></div></div>`);
+ }catch(e){alert(e.message);}
+}
+async function saveComplaintEdit(id){
+ const button=document.getElementById('editSave'),error=document.getElementById('editError');button.disabled=true;error.textContent='';
+ try{await api('/api/complaints/'+encodeURIComponent(id),{method:'PATCH',body:{title:document.getElementById('eTitle').value,body:document.getElementById('eBody').value,cat:document.getElementById('eCat').value,severity:Number(document.getElementById('eSeverity').value),website:document.getElementById('eWebsite').value,status:document.getElementById('eStatus').value}});closeModal();await render();}catch(e){error.textContent=e.message;if(button.isConnected)button.disabled=false;}
+}

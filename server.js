@@ -243,6 +243,17 @@ app.get("/api/complaints/:publicId",asyncHandler(async(req,res)=>{
  const row=await db.prepare(COMPLAINT_SELECT+" WHERE c.public_id = ? AND c.mod_state != 'removed'").get(req.params.publicId);
  if(!row)return res.status(404).json({error:"This complaint is unavailable."});const user=await currentUser(req);res.json({complaint:await shapeComplaint(row,user?.id)});
 }));
+app.patch("/api/complaints/:publicId", asyncHandler(requireAuth), asyncHandler(async (req,res)=>{
+ const c=await db.prepare("SELECT * FROM complaints WHERE public_id = ? AND mod_state != 'removed'").get(req.params.publicId);
+ if(!c)return res.status(404).json({error:"This complaint is unavailable."});
+ if(c.user_id!==req.user.id)return res.status(403).json({error:"Only the original poster can edit this complaint."});
+ const title=String(req.body.title||"").trim(),body=String(req.body.body||"").trim(),status=req.body.status,sev=Number(req.body.severity),cat=req.body.cat;
+ if(!title||title.length>180||body.length<20||body.length>10000)return res.status(400).json({error:"Use a headline of 1–180 characters and a description of 20–10,000 characters."});
+ if(!["unresolved","ignored","responded","resolved"].includes(status)||!Number.isInteger(sev)||sev<1||sev>5||!CATEGORIES.includes(cat))return res.status(400).json({error:"Choose a valid category, severity and complaint status."});
+ let website,logoUrl;try{website=normalizeWebsite(req.body.website);logoUrl=website===c.website?c.logo_url:(await discoverLogo(website)).logoUrl;}catch{return res.status(400).json({error:"Enter a public HTTPS business website."});}
+ await db.prepare("UPDATE complaints SET title = ?, body = ?, cat = ?, severity = ?, status = ?, website = ?, logo_url = ? WHERE id = ? AND user_id = ?").run(title,body,cat,sev,status,website,logoUrl||"",c.id,req.user.id);
+ res.json({ok:true});
+}));
 app.post("/api/complaints", asyncHandler(requireAuth), asyncHandler(async (req, res) => {
   const bizName = String(req.body.business || "").trim();
   const cat = CATEGORIES.includes(req.body.cat) ? req.body.cat : "Other";

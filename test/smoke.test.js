@@ -318,3 +318,22 @@ test("permanent rankings include all published complaints and are capped at five
   assert.ok(listing.complaints.some(c=>/^ZS-\d+$/.test(c.id)));
   for(let i=1;i<listing.complaints.length;i++)assert.ok((ranking.get(listing.complaints[i-1].biz)||Infinity)<=(ranking.get(listing.complaints[i].biz)||Infinity));
 });
+
+test("only the original poster can edit and confirm satisfactory resolution",async()=>{
+ const reg=await fetch(`${BASE}/api/auth/register`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:'editor@zerostars.test',password:'editor-pass',displayName:'Original poster'})});
+ const cookie=cookieOf(reg);assert.equal(reg.status,200);
+ const payload={business:'Editable Test Co',cat:'Other',loc:'Brisbane',severity:4,title:'Original complaint',body:'A sufficiently detailed original complaint for editing.'};
+ const filed=await (await fetch(`${BASE}/api/complaints`,{method:'POST',headers:{'Content-Type':'application/json',Cookie:cookie},body:JSON.stringify(payload)})).json();
+ const edit={title:'Updated complaint',body:'The company listened and satisfactorily resolved the problem.',cat:'Other',severity:4,status:'resolved',website:''};
+ const update=(auth,data=edit)=>fetch(`${BASE}/api/complaints/${filed.publicId}`,{method:'PATCH',headers:{'Content-Type':'application/json',Cookie:auth},body:JSON.stringify(data)});
+ assert.equal((await update('')).status,401);
+ const other=await login('moderator@zerostars.test','zerostars-mod');assert.equal((await update(other.cookie)).status,403);
+ assert.equal((await update(cookie,{...edit,status:'fake'})).status,400);
+ assert.equal((await update(cookie)).status,200);
+ let c=(await (await fetch(`${BASE}/api/complaints/${filed.publicId}`)).json()).complaint;
+ assert.equal(c.title,edit.title);assert.equal(c.body,edit.body);assert.equal(c.status,'resolved');
+ await fetch(`${BASE}/api/complaints/${filed.publicId}/reply`,{method:'POST',headers:{'Content-Type':'application/json',Cookie:other.cookie},body:JSON.stringify({by:'Editable Test Co',text:'Thank you for confirming the resolution.'})});
+ c=(await (await fetch(`${BASE}/api/complaints/${filed.publicId}`)).json()).complaint;assert.equal(c.status,'resolved');
+ assert.equal((await update(cookie,{...edit,status:'unresolved'})).status,200);
+ c=(await (await fetch(`${BASE}/api/complaints/${filed.publicId}`)).json()).complaint;assert.equal(c.status,'unresolved');
+});
