@@ -414,3 +414,5 @@
 body,input,textarea,select,.mono,code{font-family:"Inter",Arial,sans-serif}
 
 @media(max-width:360px){.logo-vid,.static-logo{width:145px;height:64px}}
+
+.hero-punch{max-width:40ch;font-size:clamp(18px,2vw,23px);line-height:1.35;margin:18px 0}.example-register{margin-top:32px;padding-top:24px;border-top:1px solid var(--line-strong)}.example-register h2{font-family:"Baloo 2",sans-serif;font-size:26px;margin:0 0 8px}.example-note{color:var(--ink-soft);line-height:1.6;margin:0 0 20px;max-width:75ch}.example-business{font-family:"Baloo 2",sans-serif;font-size:21px;margin:10px 0 6px}.example-case .body-excerpt{margin-bottom:18px}

@@ -82,7 +82,8 @@ async function viewHome(){
     <div class="wrap hero-grid">
       <div>
         <h1 class="title">Your experience. <em>On the record.</em></h1>
-        <p class="lede">Search first-hand complaints, read responses, or share what happened to you. Reading is free. Posting needs a free account.</p>
+        <p class="lede">One voice is easy to ignore. A public register of them isn't. Tell us what they did to you, chances are they did it to someone else too.</p>
+        <p class="hero-punch">Alone, we're a ticket they can close.<br><em>Together, we're a story they can't.</em></p>
         <div class="hero-actions"><button class="btn accent" onclick="startComplaint()">File a complaint</button><a class="btn ghost" href="#q">Search the register</a></div>
       </div>
       <div class="hero-stats">${metaError?'<button class="btn ghost" onclick="render()">Retry statistics</button>':""}
@@ -120,7 +121,7 @@ async function viewHome(){
     </div>
   </section>
 
-  <main><div class="wrap"><div class="feed" id="feed"><div class="loading">Loading complaints…</div></div></div></main>`;
+  <main><div class="wrap"><div class="feed" id="feed"><div class="loading">Loading complaints…</div></div>${exampleComplaints()}</div></main>`;
 }
 
 function caseCard(c,opts={}){
@@ -775,3 +776,13 @@ const motion=matchMedia("(prefers-reduced-motion: reduce)");function setLogoMoti
 
 function openAccountSettings(){openModal(`<div class="modal"><div class="modal-head"><h3>Account settings</h3><button class="close-x" aria-label="Close" onclick="closeModal()">×</button></div><div class="modal-body"><p>Choose a public name for future posts. Saving generates a new recovery code and invalidates your old one. Existing posts keep their published names.</p><div id="settingsErr" class="form-err"></div><div class="field"><label for="settingsName">Public display name</label><input id="settingsName" maxlength="40" value="${escAttr(account.displayName||"Member")}" autocomplete="nickname"></div><div class="field"><label for="settingsPass">Current password</label><input id="settingsPass" type="password" autocomplete="current-password"></div></div><div class="modal-foot"><button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn accent" id="settingsSave" onclick="saveAccountSettings()">Save settings</button></div></div>`);}
 async function saveAccountSettings(){const button=document.getElementById("settingsSave");button.disabled=true;try{const data=await api("/api/auth/settings",{method:"POST",body:{displayName:document.getElementById("settingsName").value,password:document.getElementById("settingsPass").value}});account=data.user;renderChrome();showRecoveryCode(data.recoveryCode,()=>render());}catch(e){showErr("settingsErr",e.message);button.disabled=false;}}
+
+function exampleComplaints(){
+ const examples=[
+  {name:"Eventually Broadband",cat:"Customer Service",severity:4,title:"The only thing faster than their internet is the direct debit",body:"Paid for lightning-fast broadband. Received a connection that treats loading an email as a three-day spiritual retreat. Support told me to restart the router. I have restarted it so often we are now in a committed relationship. Six weeks later, the bill is still the only thing arriving on time."},
+  {name:"Trust Me Mate Renovations",cat:"Trades & Construction",severity:5,title:"My kitchen is open-plan because they never finished the walls",body:"Paid a deposit for a six-week renovation. Four months later I can cook, shower and admire the exposed wiring from the same spot. They call it an industrial finish. I call it paying premium prices to live inside a cautionary tale. Their promised completion date has more sequels than a horror franchise."},
+  {name:"Warranty? What Warranty? Appliances",cat:"Retail",severity:3,title:"A washing machine that only washes its hands of responsibility",body:"The machine died after eleven days. Apparently washing clothes is improper use of a washing machine. The warranty department has transferred me so many times I should qualify for frequent-flyer points. I now own a $900 laundry basket with a digital display."},
+  {name:"Parcel Purgatory Express",cat:"Other",severity:4,title:"Delivery attempted, according to a driver who never left the van",body:"Stayed home all day for a parcel. Tracking says nobody was home. My doorbell camera says nobody was at the door. The driver has apparently mastered contactless delivery by removing the delivery. Three missed attempts later, my parcel has seen more of Australia than I have."}
+ ];
+ return `<section class="example-register" aria-labelledby="examplesTitle"><h2 id="examplesTitle">What a complaint can look like</h2><p class="example-note">Four fictional examples, with the sarcasm turned up. These are placeholders, not real complaints, and do not count towards register totals.</p><div class="feed">${examples.map(c=>`<article class="case example-case"><div class="case-top"><div class="case-main"><span class="chip">Fictional example</span><h3 class="example-business">${esc(c.name)}</h3><div class="biz-sub">${esc(c.cat)}</div><h4 class="headline">${esc(c.title)}</h4><p class="body-excerpt">${esc(c.body)}</p></div><div class="case-side"><div class="sev"><span class="sev-stars">${starRow(c.severity,15)}</span><span class="sev-num">−${c.severity}</span><span class="sev-label">Example severity</span></div></div></div></article>`).join("")}</div></section>`;
+}
